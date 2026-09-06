@@ -879,12 +879,25 @@ async def get_lab_category_summary(report_id: str, category: str, patient_name: 
         observations = obs_res.data
         
         # Filter observations by category
-        # Note: The category is stored as [{"text": "Liver", "coding": [{"display": "Liver"}]}]
+        # Supports both legacy text format and FHIR coding format (consumer-category / clinical-category)
         category_obs = []
+        cat_lower = category.strip().lower()
         for row in observations:
             obs = row.get("resource", {})
             obs_categories = obs.get("category", [])
-            if any(c.get("text", "").lower() == category.lower() for c in obs_categories):
+            matched = False
+            for c in obs_categories:
+                if c.get("text", "").strip().lower() == cat_lower:
+                    matched = True
+                    break
+                for coding in c.get("coding", []):
+                    if (coding.get("display", "").strip().lower() == cat_lower or 
+                        coding.get("code", "").strip().lower() == cat_lower):
+                        matched = True
+                        break
+                if matched:
+                    break
+            if matched:
                 category_obs.append(obs)
                 
         # 3. Generate summary
