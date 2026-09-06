@@ -2,6 +2,58 @@ import re
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+CONSUMER_CATEGORY_MAP = {
+    "Renal": "Kidney",
+    "UA": "Kidney",
+    "PANEL.UA": "Kidney",
+    "Hepatic": "Liver",
+    "Liver": "Liver",
+    "Thyroid": "Thyroid",
+    "Metabolic": "Blood Sugar",
+    "Cardiac": "Heart",
+    "Lipid Profile": "Heart",
+    "COAG": "Heart",
+    "PANEL.COAG": "Heart",
+    "Coagulation": "Heart",
+    "Inflammation": "Immune",
+    "Inflammatory": "Immune",
+    "HEM/BC": "Blood",
+    "PANEL.HEM/BC": "Blood",
+    "CBC": "Blood",
+    "Iron Studies": "Blood",
+    "Vitamins": "Vitamins",
+    "Electrolytes": "Minerals",
+    "MICRO": "Infection",
+    "PANEL.MICRO": "Infection",
+    "ABXBACT": "Infection",
+    "PANEL.ABXBACT": "Infection",
+    "ALLERGY": "Allergies",
+    "PANEL.ALLERGY": "Allergies",
+    "SERO": "Antibodies",
+    "PANEL.SERO": "Antibodies",
+    "DRUG/TOX": "Medication & Drugs",
+    "PANEL.DRUG/TOX": "Medication & Drugs",
+    "DRUGDOSE": "Medication & Drugs",
+    "FERT": "Hormones",
+    "PANEL.FERT": "Hormones",
+    "HLA": "Genetics",
+    "PANEL.HLA": "Genetics",
+    "CELLMARK": "Genetics",
+    "PANEL.CELLMARK": "Genetics",
+    "CYTO": "Cell & Tissue",
+    "PATH": "Cell & Tissue",
+    "CHEM": "General Labs",
+    "PANEL.CHEM": "General Labs"
+}
+
+def get_consumer_category(technical_category: str) -> str:
+    if not technical_category:
+        return "Other"
+    if technical_category.startswith("MOLPATH"):
+        return "Genetics"
+    return CONSUMER_CATEGORY_MAP.get(technical_category, "Other")
+
+
 # Tier 1 Core Dictionary
 # This dictionary powers Zivaa's core insights (Dehydration, Diabetes, etc.)
 LOINC_DICTIONARY = {

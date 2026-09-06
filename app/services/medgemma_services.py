@@ -5,7 +5,7 @@ from datetime import datetime, date, timedelta
 from app.config import settings
 from app.services.insights.context import EvalContext, MetricValue
 from app.services.macro_calculator import calculate_daily_macros
-from app.services.loinc_dictionary import get_loinc_mapping, LOINC_DICTIONARY
+from app.services.loinc_dictionary import get_loinc_mapping, LOINC_DICTIONARY, get_consumer_category
 
 async def _call_medgemma(prompt: str, json_mode: bool = False, prefill: bool = True, response_schema: Optional[Dict] = None, file_part: Optional[Dict] = None) -> str:
     """
@@ -1586,7 +1586,6 @@ async def parse_lab_report_to_fhir(file_bytes: bytes, mime_type: str) -> Dict[st
                         "reference_low": {"type": "NUMBER", "description": "The lower bound of the normal reference range. If missing, you MUST output -99999.", "nullable": True},
                         "reference_high": {"type": "NUMBER", "description": "The upper bound of the normal reference range. If missing, you MUST output -99999.", "nullable": True},
                         "explanation": {"type": "STRING", "description": "A detailed, plain English explanation: what this biomarker means, why it matters for us as patients, if the patient's result is high/low/normal, and one thing they can do about it."},
-                        "category": {"type": "STRING", "description": "The general category of the test (e.g. Lipid Profile, Vitamins, Sugar, Kidney, Liver, Complete Blood Count)."},
                         "status": {"type": "STRING", "description": "Based on the lab results and reference ranges, categorize this biomarker as either 'within range' or 'out of range'."},
                         "specimen": {"type": "STRING", "description": "The specimen type or system for this test (e.g., 'Serum', 'Plasma', 'Blood', 'Urine', 'CSF'). If not explicitly stated, infer from the report context if obvious, otherwise leave null.", "nullable": True}
                     },
@@ -1610,9 +1609,8 @@ async def parse_lab_report_to_fhir(file_bytes: bytes, mime_type: str) -> Dict[st
     7. CRITICAL: If a biomarker result is numeric, store it in `numeric_value`. If it is text-based (like 'Positive' or 'Clear'), store it in `qualitative_value`. DO NOT put long explanations in `qualitative_value`!
     8. CRITICAL: The `explanation` field MUST be detailed and structured in plain simple English containing four parts: 1) What the biomarker means. 2) Why it is important for the body. 3) Whether the patient's specific result is high, low, or normal. 4) What one actionable thing they can do about it.
     9. CRITICAL: If the reference range is missing for a biomarker, DO NOT invent a value like 0. You MUST output -99999 for both `reference_low` and `reference_high`.
-    10. Assign a broad clinical category to the biomarker in the `category` field (e.g., Lipid Profile, Vitamins, Sugar, Kidney).
-    11. Compare the value to the reference range and set the `status` field to exactly 'within range' or 'out of range'.
-    12. Extract the specimen type into the `specimen` field (e.g., Serum, Urine, Whole Blood). Look at headers or individual test lines.
+    10. Compare the value to the reference range and set the `status` field to exactly 'within range' or 'out of range'.
+    11. Extract the specimen type into the `specimen` field (e.g., Serum, Urine, Whole Blood). Look at headers or individual test lines.
     """
     
     response_text = await _call_medgemma(
@@ -1727,9 +1725,18 @@ async def parse_lab_report_to_fhir(file_bytes: bytes, mime_type: str) -> Dict[st
         if qual_val:
             obs_resource["valueString"] = qual_val
             
-        category = biomarker.get("category")
-        if category:
-            obs_resource["category"] = [{"text": category, "coding": [{"display": category}]}]
+        # Determine technical category from the LOINC mapping (fallback to "Other" if unmapped)
+        tech_cat = mapping["category"] if mapping else "Other"
+        # Determine consumer UI category using our dictionary map
+        cons_cat = get_consumer_category(tech_cat)
+        
+        obs_resource["category"] = [{
+            "coding": [
+                {"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "laboratory", "display": "Laboratory"},
+                {"system": "https://zivaa.com/clinical-category", "code": tech_cat, "display": tech_cat},
+                {"system": "https://zivaa.com/consumer-category", "code": cons_cat, "display": cons_cat}
+            ]
+        }]
             
         status = biomarker.get("status")
         if status:
