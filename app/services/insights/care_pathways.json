@@ -1,0 +1,39 @@
+{
+  "care_pathways": {
+    "level_1_emergency_dispatch": {
+      "definition_for_llm": "Select ONLY IF the patient exhibits signs of a life-threatening emergency (e.g., suspected stroke, myocardial infarction, severe respiratory distress, unresponsiveness). Requires immediate emergency services.",
+      "primary_cta": {"label": "Call Emergency Services (Ambulance)", "action": "CALL_AMBULANCE", "icon": "alert-triangle"},
+      "secondary_cta": {"label": "Call Primary Caregiver", "action": "CALL_CAREGIVER", "icon": "phone"}
+    },
+    "level_2_urgent_triage": {
+      "definition_for_llm": "Select if the patient has a severe deviation in vitals (e.g., hypertensive crisis, acute tachycardia) or acute symptoms (e.g., sudden severe pain, high fever) that is not immediately life-threatening but requires same-day medical intervention.",
+      "primary_cta": {"label": "Connect to 24/7 Telehealth Doctor", "action": "START_TELEHEALTH", "icon": "video"},
+      "secondary_cta": {"label": "Navigate to Urgent Care", "action": "NAVIGATE_URGENT_CARE", "icon": "map-pin"}
+    },
+    "level_3_subacute_clinical_review": {
+      "definition_for_llm": "Select if there is a concerning, sustained trend (e.g., steadily rising blood pressure over a week, unexplained weight gain) that warrants a physician's review within 48-72 hours, but no acute distress is present.",
+      "primary_cta": {"label": "Book Primary Care Appointment", "action": "BOOK_PCP_APPT", "icon": "calendar"},
+      "secondary_cta": {"label": "Order Home Lab Tests", "action": "ORDER_LABS", "icon": "flask"}
+    },
+    "level_4_proactive_intervention": {
+      "definition_for_llm": "Select if the patient is experiencing a functional decline, mobility issues, or chronic condition drift (e.g., dropping step count, poor sleep architecture) that requires allied health intervention (physio, diet, mental health) rather than a doctor.",
+      "primary_cta": {"label": "Schedule Physiotherapy Assessment", "action": "BOOK_PHYSIO", "icon": "activity"},
+      "secondary_cta": {"label": "Start Dietary Consultation", "action": "BOOK_DIETICIAN", "icon": "coffee"}
+    },
+    "level_5_remote_monitoring_escalation": {
+      "definition_for_llm": "Select if the clinical data is ambiguous, incomplete, or shows a mild, unconfirmed anomaly. The goal is to gather more specific clinical data before making a triage decision. This triggers an interactive Coach Chat to evaluate the patient's symptoms.",
+      "primary_cta": {"label": "Chat with your Health Coach", "action": "START_COACH_CHAT", "icon": "message-circle"},
+      "secondary_cta": {"label": "Take Immediate Spot Vitals", "action": "FORCE_VITALS_SYNC", "icon": "refresh-cw"}
+    },
+    "level_6_medication_reconciliation": {
+      "definition_for_llm": "Select if the pattern strongly suggests medication non-adherence, adverse drug reactions, or if a newly started medication correlates with a sudden change in vitals.",
+      "primary_cta": {"label": "Review Medication Log", "action": "REVIEW_MEDS", "icon": "pill"},
+      "secondary_cta": {"label": "Consult Clinical Pharmacist", "action": "START_COACH_CHAT", "icon": "message-circle"}
+    },
+    "level_7_wellness_maintenance": {
+      "definition_for_llm": "Select if the patient's chronic conditions are well-managed and vitals are stable. Focus on reinforcing positive behaviors and education.",
+      "primary_cta": {"label": "View Progress Report", "action": "VIEW_MONTHLY_REPORT", "icon": "award"},
+      "secondary_cta": {"label": "Read Health Article", "action": "VIEW_EDUCATION", "icon": "book-open"}
+    }
+  }
+}

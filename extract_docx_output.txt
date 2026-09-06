@@ -1,0 +1,592 @@
+Zivaa — Holistic Lab Report & Biomarker Reference
+A build reference for the Zivaa lab-report feature. Organised by panel, with biomarkers, representative reference ranges, and interpretation logic (what makes a value good vs. flagged).
+Clinical caveat: All ranges below are widely-used representative values and must be clinically validated by a physician on your team before they drive any flagging. Every real lab report prints its own reference range — parse and store that, don't hardcode these.
+How to read this document
+Each biomarker carries three things your rules engine needs:
+Reference range — the "normal" band (lab- and demographic-dependent)
+Direction of concern — whether high, low, or both is the problem
+Clinical target override — where a member's condition changes the threshold (e.g. diabetic LDL target < 70, not < 100)
+Flag tiers map to Zivaa's existing system: Green (in range) · Amber (borderline) · Red (critical → Guardian action).
+PART A — HEMATOLOGY
+1. Complete Blood Count (CBC / Hemogram)
+Biomarker
+Reference range
+Concern
+Meaning
+Hemoglobin
+M 13–17, F 12–15 g/dL
+Both
+Low = anemia; high = polycythemia/dehydration
+RBC count
+M 4.5–5.9, F 4.1–5.1 M/µL
+Both
+Oxygen-carrying capacity
+Hematocrit (PCV)
+M 40–50%, F 36–44%
+Both
+Proportion of blood that is cells
+WBC (TLC)
+4,000–11,000 /µL
+Both
+High = infection/inflammation; low = immunosuppression
+Platelets
+150,000–450,000 /µL
+Both
+Low = bleeding; high = clotting
+MCV
+80–100 fL
+Both
+Anemia sizing (micro/normo/macrocytic)
+MCH
+27–33 pg
+Both
+Hemoglobin per cell
+MCHC
+32–36 g/dL
+Both
+Hemoglobin concentration
+RDW
+11.5–14.5%
+High
+Variation in cell size
+Differential leukocyte count (DLC)
+Cell
+Reference
+Elevated implies
+Neutrophils
+40–75%
+Bacterial infection
+Lymphocytes
+20–45%
+Viral infection
+Monocytes
+2–10%
+Chronic infection
+Eosinophils
+1–6%
+Allergy / parasites
+Basophils
+0–2%
+Allergic/inflammatory
+2. ESR & Inflammation
+Biomarker
+Reference
+Concern
+Meaning
+ESR
+M <15, F <20 mm/hr (rises with age)
+High
+Non-specific inflammation
+hs-CRP
+<1 low, 1–3 avg, >3 high risk
+High
+Inflammation + cardiac risk
+3. Iron studies
+Biomarker
+Reference
+Concern
+Meaning
+Serum iron
+60–170 µg/dL
+Both
+Circulating iron
+Ferritin
+30–300 ng/mL
+Both
+Iron stores (also inflammation marker)
+TIBC
+240–450 µg/dL
+High
+Rises in iron deficiency
+Transferrin saturation
+20–50%
+Low
+Iron availability
+4. Coagulation profile
+Biomarker
+Reference
+Concern
+Meaning
+PT
+11–13.5 sec
+High
+Clotting speed
+INR
+0.8–1.1 (2–3 if on warfarin)
+Both
+Standardised PT; critical for anticoagulated members
+aPTT
+25–35 sec
+High
+Intrinsic clotting pathway
+D-dimer
+<0.5 µg/mL
+High
+Clot breakdown / DVT-PE screen
+PART B — METABOLIC & ENDOCRINE
+5. Blood Glucose / Diabetes panel (core panel for Zivaa's demographic)
+Biomarker
+Normal
+Prediabetes
+Diabetes
+Fasting glucose
+70–99 mg/dL
+100–125
+≥126
+Post-prandial (2hr)
+<140 mg/dL
+140–199
+≥200
+HbA1c
+<5.7%
+5.7–6.4%
+≥6.5%
+Random glucose
+—
+—
+≥200 + symptoms
+Fasting insulin
+2–20 µIU/mL
+—
+High = insulin resistance
+C-peptide
+0.5–2.0 ng/mL
+—
+Beta-cell function
+Override: managed diabetics (e.g. Ranjit) target HbA1c < 7%, not < 5.7%. Flag against the member's condition-specific target.
+6. Thyroid profile
+Biomarker
+Reference
+Concern
+Meaning
+TSH
+0.4–4.0 mIU/L
+Both
+High = hypothyroid; low = hyperthyroid
+Free T3
+2.3–4.2 pg/mL
+Both
+Active hormone
+Free T4
+0.8–1.8 ng/dL
+Both
+Thyroid output
+Anti-TPO antibody
+<35 IU/mL
+High
+Autoimmune (Hashimoto's)
+7. Lipid profile (cardiac-risk core)
+Biomarker
+Desirable
+Flag
+Total cholesterol
+<200 mg/dL
+>240 high
+LDL
+<100 mg/dL
+>160 high; <70 target for diabetic/cardiac
+HDL
+M >40, F >50 mg/dL
+Low = risk
+Triglycerides
+<150 mg/dL
+>200 high
+VLDL
+5–40 mg/dL
+Calculated
+Total chol / HDL ratio
+<5
+>5 raised risk
+Lipoprotein(a)
+<30 mg/dL
+High = genetic cardiac risk
+ApoB
+<90 mg/dL
+Emerging superior risk marker
+8. HbA1c-adjacent metabolic
+Biomarker
+Reference
+Meaning
+Fructosamine
+200–285 µmol/L
+2–3 week glucose average
+Uric acid
+M 3.5–7.2, F 2.6–6.0 mg/dL
+Gout / metabolic syndrome
+PART C — ORGAN FUNCTION
+9. Liver Function Test (LFT)
+Biomarker
+Reference
+Concern
+Meaning
+ALT (SGPT)
+7–56 U/L
+High
+Liver cell damage
+AST (SGOT)
+10–40 U/L
+High
+Liver/muscle damage
+ALP
+44–147 U/L
+High
+Bile duct / bone
+GGT
+M 8–61, F 5–36 U/L
+High
+Bile / alcohol marker
+Total bilirubin
+0.1–1.2 mg/dL
+High
+Jaundice
+Direct bilirubin
+<0.3 mg/dL
+High
+Obstructive picture
+Albumin
+3.5–5.0 g/dL
+Low
+Synthesis / nutrition
+Total protein
+6.0–8.3 g/dL
+Both
+General status
+A/G ratio
+1.0–2.2
+Both
+Protein balance
+Override: statin users (Ranjit) need periodic ALT/AST monitoring — surface even mild upward trends.
+10. Kidney Function Test (KFT / RFT)
+Biomarker
+Reference
+Concern
+Meaning
+Creatinine
+M 0.7–1.3, F 0.6–1.1 mg/dL
+High
+Filtration decline
+Urea / BUN
+7–20 mg/dL
+High
+Kidney / dehydration
+eGFR
+>90 mL/min/1.73m²
+Low
+<60 = CKD; key for diabetics
+Uric acid
+3.5–7.2 mg/dL
+High
+Gout / kidney
+BUN/creatinine ratio
+10:1–20:1
+Both
+Distinguishes cause
+Cystatin C
+0.6–1.0 mg/L
+High
+Sensitive early kidney marker
+11. Electrolytes
+Biomarker
+Reference
+Critical values
+Meaning
+Sodium (Na)
+135–145 mmol/L
+<120 or >160 → Red
+Fluid balance
+Potassium (K)
+3.5–5.1 mmol/L
+<2.5 or >6.5 → Red
+Cardiac arrhythmia risk
+Chloride (Cl)
+98–107 mmol/L
+—
+Acid-base
+Bicarbonate
+22–29 mmol/L
+—
+Acid-base
+Calcium (total)
+8.5–10.2 mg/dL
+<7 or >12 → Red
+Bone / parathyroid
+Ionised calcium
+4.6–5.3 mg/dL
+—
+Active fraction
+Magnesium
+1.7–2.2 mg/dL
+Both
+Neuromuscular / cardiac
+Phosphorus
+2.5–4.5 mg/dL
+Both
+Bone / kidney
+PART D — VITAMINS, HORMONES & BONE
+12. Vitamins & minerals (deficiencies very common in elderly Indians)
+Biomarker
+Reference
+Concern
+Meaning
+Vitamin D (25-OH)
+30–100 ng/mL
+Low
+<20 deficient (widespread)
+Vitamin B12
+200–900 pg/mL
+Low
+<200 deficient; neuro symptoms
+Folate
+2.7–17 ng/mL
+Low
+Anemia / neural
+Vitamin B1, B6
+assay-specific
+Low
+Neuropathy
+13. Bone health
+Biomarker
+Reference
+Meaning
+PTH
+15–65 pg/mL
+Parathyroid / calcium regulation
+Alkaline phosphatase (bone)
+see LFT
+Bone turnover
+Vitamin D
+see above
+Absorption
+14. Sex & adrenal hormones
+Biomarker
+Reference
+Notes
+Testosterone (total, M)
+300–1000 ng/dL
+Declines with age
+Estradiol (F)
+varies by cycle/menopause
+Menopausal status
+Cortisol (AM)
+6–23 µg/dL
+Adrenal function
+DHEA-S
+age/sex dependent
+Adrenal reserve
+Prolactin
+M <15, F <25 ng/mL
+Pituitary
+PART E — CARDIAC & SPECIALISED
+15. Cardiac markers
+Biomarker
+Reference
+Concern
+Meaning
+Troponin I/T
+<0.04 ng/mL
+High
+Acute heart muscle damage → emergency
+CK-MB
+<5 ng/mL
+High
+Cardiac injury
+BNP
+<100 pg/mL
+High
+Heart failure
+NT-proBNP
+age-dependent
+High
+Heart failure
+Homocysteine
+5–15 µmol/L
+High
+Cardiovascular risk
+hs-CRP
+<1 mg/L
+High
+Inflammation / risk
+16. Diabetes complications screen
+Biomarker
+Reference
+Meaning
+Urine microalbumin
+<30 mg/g creatinine
+Early diabetic kidney damage
+ACR (albumin-creatinine ratio)
+<30 mg/g
+Nephropathy screen
+PART F — URINE & STOOL
+17. Urinalysis (routine)
+Parameter
+Normal
+Flag meaning
+Colour / appearance
+Pale yellow, clear
+Cloudy = infection
+pH
+4.5–8.0
+Stones / infection
+Specific gravity
+1.005–1.030
+Hydration
+Protein
+Negative/trace
+Kidney damage
+Glucose
+Negative
+Diabetes
+Ketones
+Negative
+DKA / fasting
+Blood
+Negative
+Infection / stones
+Leukocytes / nitrites
+Negative
+UTI
+Microscopy (RBC/WBC/casts)
+Minimal
+Infection / kidney
+18. Stool
+Test
+Normal
+Meaning
+Occult blood (FOBT/FIT)
+Negative
+GI bleed / colorectal screen
+Stool R/E
+No parasites/ova
+Infection
+Calprotectin
+<50 µg/g
+Bowel inflammation
+PART G — INFECTION, IMMUNITY & CANCER MARKERS
+19. Infection & serology
+Test
+Normal
+Notes
+CRP
+<10 mg/L
+Acute infection
+Procalcitonin
+<0.1 ng/mL
+Bacterial sepsis
+Blood/urine culture
+No growth
+Identifies organism
+Hepatitis B (HBsAg)
+Non-reactive
+Screening
+Hepatitis C
+Non-reactive
+Screening
+HbA1c widal / dengue NS1
+context-specific
+Regional infections (India)
+20. Autoimmune
+Test
+Normal
+Meaning
+ANA
+Negative
+Lupus / autoimmune
+RA factor
+<14 IU/mL
+Rheumatoid arthritis
+Anti-CCP
+<20 U/mL
+RA specificity
+Anti-TPO
+<35 IU/mL
+Thyroid autoimmune
+21. Tumour markers (screening / monitoring — interpret cautiously)
+Marker
+Reference
+Associated
+PSA (M)
+<4 ng/mL (age-adjusted)
+Prostate
+CA-125 (F)
+<35 U/mL
+Ovarian
+CEA
+<3 ng/mL (non-smoker)
+Colorectal / general
+AFP
+<10 ng/mL
+Liver
+CA 19-9
+<37 U/mL
+Pancreatic
+CA 15-3
+<30 U/mL
+Breast
+These are monitoring/adjunct markers, not standalone diagnostics — surface with heavy caveats and always route to a clinician.
+PART H — INTERPRETATION LOGIC (the rules engine)
+The core principle: "good vs. not good" is never a single hardcoded number. It's a function of five inputs.
+1. Lab-provided range is source of truth
+Every report prints its own reference band per marker (varies by equipment/method/population). Parse and store the printed range per result — don't rely on the tables above at flag-time.
+2. Demographic adjustment
+Ranges shift by age, sex, and pregnancy. Several markers (ESR, creatinine, testosterone, PSA) have age-dependent bands. Elderly ranges differ from general adult ranges.
+3. Condition-specific target overrides
+Member condition
+Marker
+General target
+Member target
+Diabetic
+HbA1c
+<5.7%
+<7%
+Diabetic/cardiac
+LDL
+<100
+<70
+On warfarin
+INR
+0.8–1.1
+2.0–3.0
+CKD
+Potassium
+3.5–5.1
+tighter monitoring
+On statin
+ALT/AST
+standard
+monitor trend
+Store a per-member target table; flag against it, not the generic range.
+4. Three-tier flagging → Zivaa Green/Amber/Red
+Green — within the applicable range/target
+Amber — borderline (prediabetic band, Vitamin D 20–30, mild enzyme rise)
+Red — critical (K >6.5, glucose >300, troponin positive, Na <120) → triggers Guardian action
+Maintain a critical-value table separate from normal ranges — these are the absolute thresholds that page a Guardian regardless of member context.
+5. Trend over snapshot
+A creatinine climbing 1.0 → 1.2 → 1.4 across three quarters is more meaningful than one borderline value. Treat every biomarker as a time series, not a point reading. This is the natural fit with Zivaa's Baseline model — surface "HbA1c crept 6.9 → 7.4 over two quarters" rather than a raw dump.
+PART I — SUGGESTED DATA MODEL
+LabReport
+  ├─ id, member_id
+  ├─ report_date, source_lab, panel_type
+  ├─ raw_pdf_ref, ocr_confidence
+  └─ BiomarkerResult[]
+        ├─ biomarker_code, value, unit
+        ├─ lab_provided_range_low / _high   ← source of truth
+        ├─ member_specific_target           ← condition override
+        ├─ status_flag (green/amber/red)
+        └─ computed_at
+Member
+  └─ ConditionTarget[]
+        ├─ condition (diabetic, cardiac, ckd, warfarin…)
+        ├─ biomarker_code, target_low / _high
+CriticalValueTable   ← global, condition-independent Red thresholds
+        ├─ biomarker_code, critical_low / _high
+Flag computation order
+Is value past a critical threshold? → Red (page Guardian)
+Does member have a condition-specific target? → flag against it
+Else → flag against lab-provided range
+In all cases → append to the biomarker's time series and compute trend
+PART J — ENGINEERING NOTES FOR INDIAN LAB PDFs
+The real challenge is parsing, not the ranges. Indian lab reports come in wildly inconsistent formats:
+Major labs: Dr. Lal PathLabs, SRL Diagnostics, Metropolis, Thyrocare, Apollo, Vijaya, Agilus — each with its own PDF layout
+Mixed units (mg/dL vs mmol/L), Hindi/English bilingual reports, scanned vs. digital PDFs
+Panel names vary ("KFT" vs "RFT" vs "Renal Panel"; "SGPT" vs "ALT")
+Recommendation: build a biomarker-synonym dictionary (map "SGPT", "ALT", "Alanine Transaminase" → one canonical code) and prototype the OCR/parser against real reports from the top 3–4 labs before committing to the flagging layer. The parser is where this feature succeeds or fails.

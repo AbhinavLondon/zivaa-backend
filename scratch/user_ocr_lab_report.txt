@@ -1,0 +1,186 @@
+Report Status 
+Male
+: 25 Years
+:
+:
+:
+Age
+Gender
+Reported 
+P
+7/11/2023 11:08:00AM
+SELF
+WM17SPF
+: Mr. DUMMY
+:
+:
+:
+:
+Name 
+Lab No. 
+Ref By 
+Collected 
+A/c Status 
+17/1/2024 10:55:48AM
+Revised
+Collected at : LPL-ROHINI (NATIONAL REFERENCE LAB) Processed at :
+National Reference laboratory, Block E, Sector 
+18, ROHINI
+DELHI 110085
+LPL-NATIONAL REFERENCE LAB
+National Reference laboratory, Block E, 
+Sector 18, Rohini, New Delhi -110085
+Test Report 
+Test Name Results Units Bio. Ref. Interval
+SWASTHFIT SUPER 4
+LIVER & KIDNEY PANEL, SERUM
+Creatinine 1.00
+(Modified Jaffe,Kinetic)
+mg/dL 0.70 - 1.30 
+GFR Estimated 107
+(CKD EPI Equation 2021)
+mL/min/1.73m2 >59 
+GFR Category G1
+(KDIGO Guideline 2012)
+ 
+Urea 40.00
+(Urease UV)
+mg/dL 13.00 - 43.00 
+Urea Nitrogen Blood 18.68
+(Calculated)
+mg/dL 6.00 - 20.00 
+BUN/Creatinine Ratio 19
+(Calculated)
+ 
+Uric Acid 7.00
+(Uricase)
+mg/dL 3.50 - 7.20 
+AST (SGOT) 30.0
+(IFCC without P5P)
+U/L 15.00 - 40.00 
+ALT (SGPT) 40.0
+(IFCC without P5P)
+U/L 10.00 - 49.00 
+GGTP 50.0
+(IFCC)
+U/L 0 - 73 
+Alkaline Phosphatase (ALP) 100.00
+(IFCC-AMP)
+U/L 30.00 - 120.00 
+Bilirubin Total 1.00
+(Oxidation)
+mg/dL 0.30 - 1.20 
+Bilirubin Direct 0.20
+(Oxidation)
+mg/dL <0.3 
+Bilirubin Indirect 0.80
+(Calculated)
+mg/dL <1.10 
+Total Protein 8.00
+(Biuret)
+g/dL 5.70 - 8.20 
+Albumin 4.00
+(BCG)
+g/dL 3.20 - 4.80 
+A : G Ratio 1.00
+(Calculated)
+ 0.90 - 2.00 
+Globulin(Calculated) 4.00 gm/dL 2.0 - 3.5 
+Calcium, Total 9.00
+(Arsenazo III)
+mg/dL 8.70 - 10.40 
+Phosphorus 4.00
+(Molybdate UV)
+mg/dL 2.40 - 5.10 
+Sodium 140.00
+(Indirect ISE)
+mEq/L 136.00 - 145.00 
+Potassium 4.00
+(Indirect ISE)
+mEq/L 3.50 - 5.10 
+Chloride 100.00
+(Indirect ISE)
+mEq/L 98.00 - 107.00 
+LIPID SCREEN, SERUM
+Cholesterol, Total 100.00
+(CHO-POD)
+mg/dL <200.00 
+Triglycerides 100.00
+(GPO-POD)
+mg/dL <150.00 
+HDL Cholesterol 30.00
+(Enz Immunoinhibition)
+mg/dL >40.00 
+LDL Cholesterol, Calculated 50.00
+(Calculated)
+mg/dL <100.00 
+VLDL Cholesterol,Calculated 20.00
+(Calculated)
+mg/dL <30.00 
+Non-HDL Cholesterol 70
+(Calculated)
+mg/dL <130 
+GLUCOSE, FASTING (F)
+Glucose Fasting 80.00
+(Hexokinase)
+mg/dL 70 - 100 
+VITAMIN B12; CYANOCOBALAMIN
+(CLIA)
+Vitamin B12; Cyanocobalamin 400.00 pg/mL 211.00 - 911.00 
+VITAMIN D, 25 - HYDROXY, SERUM
+(CLIA)
+Vitamin D, 25 Hydroxy 150.00 nmol/L 75.00 - 250.00 
+THYROID PROFILE,TOTAL, SERUM
+(CLIA)
+T3, Total 1.00 ng/mL 0.60 - 1.81 
+T4, Total 7.00 µg/dL 5.01 - 12.45 
+TSH 3.00 µIU/mL 0.550 - 4.780 
+HbA1c (GLYCOSYLATED HEMOGLOBIN), BLOOD
+(HPLC, NGSP certified)
+HbA1c 10.0 % 4.00 - 5.60
+Estimated average glucose (eAG) 240 mg/dL
+COMPLETE BLOOD COUNT; CBC
+Hemoglobin
+(Photometry)
+15.00 g/dL 13.00 - 17.00 
+Packed Cell Volume (PCV)
+(Calculated)
+45.00 % 40.00 - 50.00 
+RBC Count
+(Electrical Impedence)
+5.00 mill/mm3 4.50 - 5.50 
+MCV
+(Electrical Impedence)
+100.00 fL 83.00 - 101.00 
+MCH
+(Calculated)
+30.00 pg 27.00 - 32.00 
+MCHC
+(Calculated)
+33.00 g/dL 31.50 - 34.50 
+Red Cell Distribution Width (RDW)
+(Electrical Impedence)
+12.00 % 11.60 - 14.00 
+Total Leukocyte Count (TLC)
+(Electrical Impedence)
+5.00 thou/mm3 4.00 - 10.00 
+Differential Leucocyte Count (DLC)
+(VCS Technology)
+Segmented Neutrophils 50.00 % 40.00 - 80.00 
+Lymphocytes 40.00 % 20.00 - 40.00 
+Monocytes 5.00 % 2.00 - 10.00 
+Eosinophils 4.00 % 1.00 - 6.00 
+Basophils 1.00 % <2.00 
+Absolute Leucocyte Count
+(Calculated)
+Neutrophils 2.50 thou/mm3 2.00 - 7.00 
+Lymphocytes 2.00 thou/mm3 1.00 - 3.00 
+Monocytes 0.25 thou/mm3 0.20 - 1.00 
+Eosinophils 0.20 thou/mm3 0.02 - 0.50 
+Basophils 0.05 thou/mm3 0.02 - 0.10 
+Platelet Count
+(Electrical impedence)
+151 thou/mm3 150.00 - 410.00 
+Mean Platelet Volume
+(Electrical Impedence)
+6.5 fL 6.5 - 12.0

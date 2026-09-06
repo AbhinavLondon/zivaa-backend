@@ -1,0 +1,285 @@
+{
+  "patient_id": "44444444-4444-4444-4444-444444444444",
+  "timestamp": "2026-06-28T19:37:33.250204",
+  "alerts": {
+    "rules_engine": [
+      {
+        "rule_id": "prediabetes_progression",
+        "name": "Pre-Diabetes -> Diabetes Progression",
+        "severity": "HIGH",
+        "category": "METABOLIC",
+        "message": "HbA1c is 7.8% (diabetes range per ADA 2024 \u00a72) (RCV-confirmed rising trend, +8.3% change). Rate of change triggers ADA therapy review threshold. Cross-correlated with elevated glucose.",
+        "evidence": {
+          "hba1c_latest": 7.8,
+          "ada_stage": "diabetes",
+          "glucose_elevated": true,
+          "steps_declining": false,
+          "guideline": "ADA 2024 \u00a72 Table 2.3",
+          "trend_direction": "rising",
+          "clinical_flag": "worsening",
+          "rcv_threshold_pct": 6.7,
+          "change_percent": 8.3,
+          "rate_alert": {
+            "label": "therapy_review_needed",
+            "citation": "ADA 2024: HbA1c rise >0.5% in 3-6mo warrants therapy adjustment"
+          }
+        }
+      },
+      {
+        "rule_id": "anemia_detection",
+        "name": "Anemia / Low Iron Detection",
+        "severity": "MEDIUM",
+        "category": "HEMATOLOGY",
+        "message": "Hemoglobin is 12.1 g/dL -- classified as mild (actively declining) anemia per WHO 2011 (threshold for male: <13.0 g/dL). RCV-confirmed declining trend (-10.4%, RCV threshold: 8.8%).",
+        "evidence": {
+          "hgb": 12.1,
+          "who_severity": "mild (actively declining)",
+          "threshold_used": 13.0,
+          "patient_sex": "male",
+          "hr_elevated": false,
+          "spo2_low": false,
+          "guideline": "WHO 2011 (WHO/NMH/NHD/MNM/11.1)",
+          "trend_direction": "declining",
+          "clinical_flag": "worsening",
+          "rcv_threshold_pct": 8.8,
+          "change_percent": -10.4
+        }
+      },
+      {
+        "rule_id": "cardiovascular_risk",
+        "name": "Cardiovascular Event Risk",
+        "severity": "LOW",
+        "category": "CARDIAC",
+        "message": "LDL cholesterol is borderline high (158.0 mg/dL per ACC/AHA 2018 classification).Lifestyle and statin therapy should be discussed per Grundy et al. 2018 guideline.",
+        "evidence": {
+          "ldl": 158.0,
+          "ldl_class": "borderline_high",
+          "bp_elevated": false,
+          "guideline": "ACC/AHA 2018 Cholesterol, ACC/AHA 2017 HTN",
+          "trend_direction": "stable",
+          "clinical_flag": "needs_attention",
+          "rcv_threshold_pct": 23.7,
+          "change_percent": 9.0
+        }
+      }
+    ],
+    "med_gemma_diagnostics": [
+      {
+        "category": "GENERAL",
+        "evidence": {},
+        "message": "Patient exhibited a decreased body temperature of 35.9\b0C on 2026-06-17, which is 2.0 standard deviations below the established baseline mean, warranting further investigation for potential underlying causes.",
+        "name": "Low Body Temperature",
+        "rule_id": "low_body_temperature",
+        "severity": "MEDIUM"
+      },
+      {
+        "category": "METABOLIC",
+        "evidence": {},
+        "message": "Patient's baseline blood glucose mean is 138.06 mg/dL, indicating impaired glucose tolerance (prediabetes range). A critical spike of 176.1 mg/dL was noted on 2026-05-21, significantly exceeding the normal range and baseline (ADA guideline for fasting glucose: 100-125 mg/dL for prediabetes; random glucose >140 mg/dL can be concerning).",
+        "name": "Prediabetes Risk",
+        "rule_id": "prediabetes_risk",
+        "severity": "MEDIUM"
+      },
+      {
+        "category": "RESPIRATORY",
+        "evidence": {},
+        "message": "Patient experienced a critical oxygen saturation drop to 70.0% on 2026-06-11, which is 2.8 standard deviations below baseline. This level indicates severe hypoxemia and requires immediate medical attention.",
+        "name": "Critical Hypoxemia",
+        "rule_id": "critical_hypoxemia",
+        "severity": "HIGH"
+      },
+      {
+        "category": "CARDIAC",
+        "evidence": {},
+        "message": "Patient's baseline blood pressure indicates Stage 1 Hypertension (AHA guidelines: systolic 130-139 mmHg or diastolic 80-89 mmHg). The mean systolic BP is 143.61 mmHg and mean diastolic BP is 88.1 mmHg. Elevated readings include systolic 168.6 mmHg (2026-06-11) and diastolic 95.0 mmHg (2026-06-19), warranting management.",
+        "name": "Stage 1 Hypertension",
+        "rule_id": "hypertension_stage1",
+        "severity": "MEDIUM"
+      },
+      {
+        "category": "GENERAL",
+        "evidence": {},
+        "message": "Patient recorded a significantly decreased step count of 193 steps on 2026-06-14, which is 1.5 standard deviations below the baseline mean. This suggests a potential reduction in physical activity, which could impact overall health.",
+        "name": "Decreased Physical Activity",
+        "rule_id": "decreased_physical_activity",
+        "severity": "LOW"
+      },
+      {
+        "category": "GENERAL",
+        "evidence": {},
+        "message": "Patient's medication adherence rate over the past 7 days is 66.7%, with 2 missed doses. This suboptimal adherence can negatively impact the management of existing or developing health conditions.",
+        "name": "Suboptimal Medication Adherence",
+        "rule_id": "suboptimal_medication_adherence",
+        "severity": "MEDIUM"
+      }
+    ]
+  },
+  "nudge": {
+    "gemini_flash": {
+      "risk_level": "HIGH",
+      "nudge_title": "Helping your loved one feel their best: simple steps we can take together",
+      "nudge_text": "We recently reviewed your loved one\u2019s health trends, and we want to help you stay ahead of a few changes. Their blood sugar levels have risen into a range that needs a bit of extra attention, and their red blood cell count\u2014which helps keep them energized\u2014has dipped slightly. Their cholesterol is also just a tiny bit high. It is completely manageable, and we are right here to support you in helping them feel strong and comfortable every day.",
+      "why_flagged": "This was flagged because we noticed three key trends in their recent tests: first, their long-term blood sugar rose to 7.8%, which crosses into the diabetes range and suggests their current routine needs a quick review. Second, their oxygen-carrying red blood cell levels dropped by about 10%, pointing to mild anemia which might explain any extra tiredness. Finally, their cholesterol is sitting in a borderline-high area, meaning we should keep a gentle eye on their heart health.",
+      "action_steps": "1. Reach out to their doctor for a friendly chat about their rising blood sugar to see if any updates to their care plan are needed.\n2. Ask the doctor if an iron supplement or simple dietary changes could help boost their red blood cell levels and energy.\n3. Incorporate iron-rich, comforting foods like leafy greens, beans, or lean proteins into their favorite meals.\n4. Encourage light, pleasant movement\u2014like a short daily walk together\u2014to support both their heart and blood sugar levels."
+    },
+    "med_gemma": {
+      "action_steps": "Please reach out to your patient's doctor immediately to discuss the recent significant drop in oxygen levels. When you speak with them, it would also be helpful to review their blood pressure, blood sugar, and body temperature readings. For medications, consider setting up a reminder system or finding a routine that helps ensure all doses are taken. Finally, encouraging gentle movement each day can help with their activity levels.",
+      "nudge_text": "Hi there, we've gathered some recent health information for your patient and wanted to share a few things to keep an eye on. It looks like there are a few areas where we could give some extra support to help them stay as healthy as possible.",
+      "nudge_title": "Checking In On Your Loved One's Health",
+      "risk_level": "HIGH",
+      "why_flagged": "We've noticed a few important changes in your patient's health. Most critically, their oxygen levels dropped quite low recently, which needs immediate attention. We're also seeing that their blood pressure and blood sugar levels are a bit high, and their body temperature was recently a little low. There's also been a concern about missed medications, and their daily activity has decreased a bit."
+    }
+  },
+  "daily_plan": {
+    "gemini_flash": {
+      "summary": "Good morning, Mukeshji! I hope you're feeling well today. Your heart rate and blood pressure are looking excellent, and you had a good 7 hours of sleep. Today, our focus will be gently supporting your health. We'll pay special attention to managing your sugar levels, as your recent HbA1c shows a slight rise. We'll also nourish your body to help with your hemoglobin, which is a little low, and keep your cholesterol levels in mind with our meal choices. It\u2019s very important to remember your medicines; they play a huge role in keeping you healthy. This personalized plan is designed to help you feel your best, so let's have a wonderful and healthy day together!",
+      "schedule": {
+        "morning": [
+          {
+            "task": "Take morning medicines | 7:00 AM",
+            "completed": false
+          },
+          {
+            "task": "Check glucose level | 7:30 AM",
+            "completed": false
+          },
+          {
+            "task": "Enjoy Dhokla breakfast | 8:00 AM",
+            "completed": false
+          },
+          {
+            "task": "Gentle walk outside | 8:45 AM",
+            "completed": false
+          }
+        ],
+        "afternoon": [
+          {
+            "task": "Take afternoon medicines | 1:00 PM",
+            "completed": false
+          },
+          {
+            "task": "Eat lunch, then rest | 1:30 PM",
+            "completed": false
+          }
+        ],
+        "evening": [
+          {
+            "task": "Take evening medicines | 7:00 PM",
+            "completed": false
+          },
+          {
+            "task": "Check BP, eat dinner | 8:00 PM",
+            "completed": false
+          }
+        ],
+        "night": [
+          {
+            "task": "Take night medicine | 9:30 PM",
+            "completed": false
+          },
+          {
+            "task": "Prepare for sleep | 10:00 PM",
+            "completed": false
+          }
+        ]
+      },
+      "health_context": {
+        "conditions_addressed": [
+          "cardiovascular",
+          "anemia",
+          "diabetes"
+        ],
+        "insights_count": 3,
+        "lab_alerts_count": 5,
+        "med_adherence_rate": 66.7
+      },
+      "active_alerts": [
+        "Pre-Diabetes -> Diabetes Progression",
+        "Anemia / Low Iron Detection",
+        "Cardiovascular Event Risk"
+      ]
+    },
+    "med_gemma": {
+      "summary": "Dear Mukeshji, your well-being is our top priority. Today, we're focusing on keeping you warm and comfortable, closely monitoring your oxygen and blood pressure, and managing your blood sugar with nourishing meals. Remember, taking your medicines as prescribed is crucial, and let's try some gentle movement to boost your energy. We're here for you every step of the way.",
+      "schedule": {
+        "morning": [
+          {
+            "task": "Take all morning medicines | 7:00 AM",
+            "completed": false
+          },
+          {
+            "task": "Check blood sugar, BP, oxygen | 7:15 AM",
+            "completed": false
+          },
+          {
+            "task": "Enjoy nutritious moong dal cheela | 8:00 AM",
+            "completed": false
+          }
+        ],
+        "afternoon": [
+          {
+            "task": "Relish vegetable khichdi for lunch | 1:00 PM",
+            "completed": false
+          },
+          {
+            "task": "Gentle stretching, seated exercises | 2:30 PM",
+            "completed": false
+          }
+        ],
+        "evening": [
+          {
+            "task": "Take evening medications | 7:00 PM",
+            "completed": false
+          },
+          {
+            "task": "Light dinner: vegetable upma | 7:30 PM",
+            "completed": false
+          }
+        ],
+        "night": [
+          {
+            "task": "Check body temperature, oxygen | 9:30 PM",
+            "completed": false
+          },
+          {
+            "task": "Ensure good room warmth | 9:45 PM",
+            "completed": false
+          }
+        ]
+      },
+      "health_context": {
+        "conditions_addressed": [
+          "Type 2 Diabetes Mellitus",
+          "Essential Hypertension"
+        ],
+        "insights_count": 6,
+        "lab_alerts_count": 5,
+        "med_adherence_rate": 66.7,
+        "model_used": "Gemini (gemini-2.5-flash)"
+      },
+      "active_alerts": [
+        "Low Body Temperature",
+        "Prediabetes Risk",
+        "Critical Hypoxemia",
+        "Stage 1 Hypertension",
+        "Decreased Physical Activity"
+      ]
+    }
+  },
+  "daily_summary": {
+    "gemini_flash": {
+      "summary": "You did a wonderful job caring for your health yesterday, with your oxygen levels shining brighter than usual and your resting heart rate staying calm and steady. For today, focus on enjoying some iron-rich, heart-healthy foods with minimal sugar to keep your energy levels steady and your body feeling its best.",
+      "overall_status": "concerning",
+      "insights_count": {
+        "high": 1,
+        "medium": 1,
+        "low": 1
+      },
+      "top_concern": "Pre-Diabetes -> Diabetes Progression"
+    },
+    "med_gemma": {
+      "summary": "Yesterday you kept active and showed good effort, even though your sleep felt a little restless and we saw your sugar levels and blood pressure were a bit elevated. Today, let's focus on fueling your body with healthy choices and finding moments of calm for better rest.",
+      "model_used": "Gemini (gemini-2.5-flash)"
+    }
+  }
+}

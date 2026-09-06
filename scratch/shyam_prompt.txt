@@ -1,0 +1,204 @@
+You are MedGemma, a caring clinical guide for eldercare support.
+Create a comprehensive 7-DAY LIFESTYLE AND MEAL PLAN (Sunday to Saturday) for:
+
+PATIENT: Shyam Benegal, 69-year-old Unknown
+LOCATION: Unknown
+CONDITIONS: None specified
+
+PATIENT PREFERENCES (Crucial for plan setup):
+  - Primary Focus: energy
+  - Wake Time: 6 - 7
+  - Movement Level: Active
+  - Steps Goal: 9000 steps
+  - Diet Type: No specific diet
+  - Health Conditions: Light sleep
+  - Evening Activities: Meditation, Reading, Prayer, Music
+
+NUTRITIONAL TARGETS (Daily Averages):
+  - Total Calories: 2017 kcal (Protein: 201g, Carbs: 151g, Fat: 67g)
+
+KNOWN PATIENT PREFERENCES (From Memory):
+  - No specific preferences recorded.
+
+RECENT REPORTED SYMPTOMS (From recent chat logs):
+  - Severe dandruff (Status: Resolving)
+  - Facial redness and flaking (Status: Active)
+  - Severe dandruff with dry, itchy scalp (Status: Active)
+  - Nighttime sugar cravings (Status: Active)
+  - Left-sided back pain (Status: Resolving)
+  - Burning shoulder pain (Status: Resolving)
+
+CARE PLAN ACTIONS (from Coach):
+[AGREED ACTIONS]
+- Schedule an appointment with primary care or orthopedist for shoulder evaluation and physical therapy referral
+- Rest the injured arm and avoid heavy lifting, overhead reaching, or throwing
+- Apply ice pack to the shoulder for 15-20 minutes to reduce inflammation
+- Perform gentle pendulum exercises to prevent shoulder stiffness
+- Apply fragrance-free, non-comedogenic moisturizer to face daily
+- Perform scapular squeezes (shoulder blade pinches) to keep upper back muscles active
+- Perform passive assisted range of motion exercises using the healthy arm
+- Perform a patch test on a small area of skin before applying new facial creams or medicated shampoos
+- Discuss chronic facial redness, flaking, and dandruff during the upcoming primary care visit
+- Share the prepared symptom and MRI summary with the doctor during the upcoming visit
+- Wash face with a very gentle, fragrance-free cleanser and avoid harsh scrubs or alcohol-based toners
+- Brush teeth early right after dinner to help curb late-night sugar cravings
+- Swap sweet late-night snacks for herbal tea or healthy alternatives like berries or dark chocolate
+- Practice stress-reduction techniques such as box breathing or a transition ritual before winding down
+- Ensure dinner contains adequate protein, healthy fats, and fiber to maintain stable blood sugar levels
+- Ensure regular, balanced meals during stressful days to prevent nighttime hunger
+- Acknowledge emotions and identify if nighttime cravings are driven by hunger, stress, or fatigue
+- Delay eating sugar by 15 minutes when cravings hit by drinking water or herbal tea
+- Wash hair with lukewarm water instead of hot water to prevent stripping scalp moisture
+- Reduce hair washing frequency to 2-3 times a week to allow natural oils to hydrate the scalp
+- Apply jojoba or coconut oil to the scalp a few hours before washing to lock in moisture
+- Apply a rich conditioner to the middle and ends of hair after using medicated shampoo
+- Wash hair with a gentle, sulfate-free moisturizing shampoo on days when not using medicated shampoo
+- Massage Nizoral shampoo directly into the scalp and let it sit for 3 to 5 minutes before rinsing
+- Discuss nighttime sugar cravings and consider checking baseline metabolic health (such as an HbA1c test) during the next routine primary care visit
+- Reduce Nizoral shampoo usage to once every 1 to 2 weeks for prevention once dandruff clears up
+- Use a sulfate-free, fragrance-free shampoo with soothing ingredients like aloe vera or oatmeal to hydrate the scalp
+- Schedule a primary care or dermatologist visit if scalp dryness and flaking do not improve after 2 to 3 weeks of self-care or worsen
+- Use Nizoral shampoo twice a week for up to 4 weeks to get scalp flaking under control
+- Discuss stress management strategies with your doctor during a routine primary care visit if daytime stress feels overwhelming
+- Apply a warm compress or heating pad to the left side of the back for 15-20 minutes to relax the muscle
+- Consult primary care doctor to determine the exact therapeutic dose of Vitamin D based on recent blood test results
+- Take Vitamin D supplement with a meal containing healthy fats to optimize absorption
+- Monitor left-sided back tightness and shoulder pain, and report to doctor if they worsen or do not improve
+
+[SUGGESTED ACTIONS]
+- Update the doctor's summary to include the 7-8 year history of facial redness, flaking, and dandruff
+- Consider an over-the-counter shampoo containing zinc pyrithione or selenium sulfide if scalp flaking does not improve with hydration alone
+
+HISTORICAL SUCCESS CORRELATIONS (What works for this person):
+  - No clear statistical correlations established yet.
+
+INSTRUCTIONS:
+1. Generate a complete 7-day schedule (Sunday through Saturday).
+2. Focus on MEALS and MAJOR ACTIVITIES (like grocery shopping, meal prep, exercise blocks). 
+3. Ensure high diversity in the Indian recipes provided across the week. Do not repeat the same lunch or dinner within 3 days.
+4. CRITICAL: For every meal, provide the exact macros (Protein, Carbs, Fats) in the 'details' field to prove it meets the NUTRITIONAL TARGETS.
+5. Generate 2-3 tasks for the morning, 1-2 for afternoon, 1-2 for evening, and 1-2 for night per day.
+6. CRITICAL: Ensure that all 'AGREED' care plan actions are explicitly scheduled across the week. For 'SUGGESTED' actions, look for opportunities to combine them with agreed actions or schedule them on days that align with alleviating the patient's active symptoms.
+7. For each day, write a 1-2 sentence 'summary' explaining why this plan was tailored for the user on this specific day.
+8. Format the output strictly as JSON matching the provided schema, containing an array of 7 days.
+
+EXPECTED JSON SCHEMA:
+{
+  "$defs": {
+    "DailySchedule": {
+      "properties": {
+        "morning": {
+          "items": {
+            "$ref": "#/$defs/TaskItem"
+          },
+          "title": "Morning",
+          "type": "array"
+        },
+        "afternoon": {
+          "items": {
+            "$ref": "#/$defs/TaskItem"
+          },
+          "title": "Afternoon",
+          "type": "array"
+        },
+        "evening": {
+          "items": {
+            "$ref": "#/$defs/TaskItem"
+          },
+          "title": "Evening",
+          "type": "array"
+        },
+        "night": {
+          "items": {
+            "$ref": "#/$defs/TaskItem"
+          },
+          "title": "Night",
+          "type": "array"
+        }
+      },
+      "required": [
+        "morning",
+        "afternoon",
+        "evening",
+        "night"
+      ],
+      "title": "DailySchedule",
+      "type": "object"
+    },
+    "DayPlan": {
+      "properties": {
+        "day_of_week": {
+          "description": "Day of the week (e.g. 'Monday')",
+          "title": "Day Of Week",
+          "type": "string"
+        },
+        "summary": {
+          "description": "A 1-2 sentence explanation of why this plan was generated for the user on this day, taking into account their nutritional goals and preferences.",
+          "title": "Summary",
+          "type": "string"
+        },
+        "schedule": {
+          "$ref": "#/$defs/DailySchedule"
+        }
+      },
+      "required": [
+        "day_of_week",
+        "summary",
+        "schedule"
+      ],
+      "title": "DayPlan",
+      "type": "object"
+    },
+    "TaskItem": {
+      "properties": {
+        "task": {
+          "description": "Descriptive task title giving a good snapshot (3-6 words, e.g. 'Morning Walk in the Park')",
+          "title": "Task",
+          "type": "string"
+        },
+        "time": {
+          "description": "Time of the task, e.g., '7:30 AM'",
+          "title": "Time",
+          "type": "string"
+        },
+        "completed": {
+          "default": false,
+          "title": "Completed",
+          "type": "boolean"
+        },
+        "category": {
+          "description": "Canonical 1-2 word category, e.g. 'Walking', 'Breakfast'",
+          "title": "Category",
+          "type": "string"
+        },
+        "details": {
+          "description": "One sentence explaining the why/how. Must include macro breakdown for meals.",
+          "title": "Details",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "time",
+        "category",
+        "details"
+      ],
+      "title": "TaskItem",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "days": {
+      "items": {
+        "$ref": "#/$defs/DayPlan"
+      },
+      "title": "Days",
+      "type": "array"
+    }
+  },
+  "required": [
+    "days"
+  ],
+  "title": "WeeklyPlanResponse",
+  "type": "object"
+}

@@ -1,0 +1,47 @@
+{
+  "report_summary": "This lab report indicates that your Microalbumin: Creatinine Ratio (ACR) in urine is moderately increased (A2 category) at 139.13 mg/g Creat, which can be an indicator of early kidney damage and an increased risk for chronic kidney disease and diabetic nephropathy.",
+  "performer": "Dr Lal Path Labs",
+  "biomarkers": [
+    {
+      "test_name": "Microalbumin",
+      "explanation": "Microalbumin measures a small amount of albumin in the urine, which can indicate early kidney damage.",
+      "loinc_code": "14957-5",
+      "numeric_value": 32.00,
+      "qualitative_value": "null",
+      "reference_high": -99999,
+      "reference_low": -99999,
+      "unit": "mg/L"
+    },
+    {
+      "test_name": "Creatinine",
+      "explanation": "Creatinine is a waste product filtered by the kidneys, and its level in urine helps normalize other urine test results like albumin.",
+      "loinc_code": "2161-8",
+      "numeric_value": 23.00,
+      "qualitative_value": "null",
+      "reference_high": 392.00,
+      "reference_low": 24.00,
+      "unit": "mg/dL"
+    },
+    {
+      "test_name": "Microalbumin: Creatinine Ratio",
+      "explanation": "This ratio indicates the amount of albumin to creatinine in your urine, which is a sensitive measure of kidney damage and risk for chronic kidney disease.",
+      "loinc_code": "9318-7",
+      "numeric_value": 139.13,
+      "qualitative_value": "null",
+      "reference_high": 30.00,
+      "reference_low": 0.00,
+      "unit": "mg/g Creat"
+    },
+    {
+      "test_name": "ACR Category",
+      "explanation": "This category classifies the severity of albuminuria, with A2 indicating moderately increased albumin excretion, suggesting potential kidney issues.",
+      "loinc_code": "82903-8",
+      "numeric_value": -99999,
+      "qualitative_value": "A2 (Moderately increased)",
+      "reference_high": -99999,
+      "reference_low": -99999,
+      "unit": ""
+    }
+  ],
+  "collection_date": "2021-05-29"
+}

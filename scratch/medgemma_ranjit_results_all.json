@@ -1,0 +1,193 @@
+{
+  "generate_medgemma_alerts": {
+    "time_taken_seconds": 25.12702178955078,
+    "output": {
+      "active_insights": [
+        {
+          "category": "CARDIAC",
+          "evidence": {
+            "avg_heart_rate": "69.0"
+          },
+          "message": "Patient shows significant fluctuations in average heart rate, with critical spikes of 105.0 bpm on 2026-08-11 and 98.0 bpm on 2026-08-15, compared to a baseline of 78.4 bpm. Additionally, a warning decrease to 69.0 bpm was observed on 2026-08-22. These fluctuations warrant further investigation.",
+          "name": "Average Heart Rate Fluctuations",
+          "rule_id": "avg_heart_rate_fluctuations",
+          "severity": "HIGH"
+        },
+        {
+          "category": "GENERAL",
+          "evidence": {
+            "sleep_stage_6_hours": "2.1416666666666666",
+            "sleep_stage_6_pct": "28.42920353982301"
+          },
+          "message": "Patient shows elevated Sleep Stage 6 hours (2.1 hours on 2026-08-16 vs baseline 1.2 hours) and percentage (28.4% on 2026-08-16 vs baseline 16.1%). This warrants monitoring for potential sleep architecture disruption.",
+          "name": "Elevated Sleep Stage 6",
+          "rule_id": "elevated_sleep_stage_6",
+          "severity": "LOW"
+        },
+        {
+          "category": "RESPIRATORY",
+          "evidence": {
+            "oxygen_sat": "88.5"
+          },
+          "message": "Patient experienced a critical drop in oxygen saturation to 88.5% on 2026-08-10, significantly below the baseline of 93.3%. This indicates a hypoxemic episode requiring further investigation.",
+          "name": "Hypoxemia Episode",
+          "rule_id": "hypoxemia_episode",
+          "severity": "HIGH"
+        }
+      ],
+      "resolved_insights": []
+    }
+  },
+  "generate_medgemma_nudge": {
+    "time_taken_seconds": 20.638416290283203,
+    "output": {
+      "action_steps": {
+        "description": "Your current vitals are looking fantastic, showing strong signs of good health. Continue with your healthy habits, including regular activity and good sleep, to maintain this positive trend. Remember, consistency is key!",
+        "title": "Keep up the great work!",
+        "title_emphasis": "Maintain your well-being",
+        "primary_cta": {
+          "label": "View Progress Report",
+          "action": "VIEW_MONTHLY_REPORT",
+          "icon": "award"
+        },
+        "secondary_cta": {
+          "label": "Read Health Article",
+          "action": "VIEW_EDUCATION",
+          "icon": "book-open"
+        }
+      },
+      "nudge_text": "Your recent health check-in shows that your key vitals are looking really stable and within healthy ranges. This is a wonderful sign of good overall well-being.",
+      "nudge_title": "All Clear for Now!",
+      "risk_level": "LOW",
+      "why_flagged": {
+        "conclusion": "Overall, your body is showing strong signs of balance and good health. Keep up the great work!",
+        "summary": "Great news! Your recent health check-in shows that your key vitals are looking really stable and within healthy ranges. This is a wonderful sign of good overall well-being.",
+        "vitals": [
+          {
+            "description": "Your heart is beating at a comfortable and healthy pace.",
+            "name": "Heart Rate",
+            "usual": "Within healthy parameters",
+            "value": "72.0 bpm"
+          },
+          {
+            "description": "Your blood pressure readings are looking excellent, right in the sweet spot for a healthy heart.",
+            "name": "Blood Pressure",
+            "usual": "Within healthy parameters",
+            "value": "120.0/80.0 mmHg"
+          },
+          {
+            "description": "You're getting a good amount of restorative sleep, which is so important for your body and mind.",
+            "name": "Sleep",
+            "usual": "Typically 7.0-9.0 hours",
+            "value": "7.0 hrs"
+          },
+          {
+            "description": "It looks like your step count for this period was 0.0. This often means your tracker wasn't worn or data wasn't recorded, rather than a lack of activity. Since our system hasn't flagged any deeper health concerns, we'll just note this as a data point.",
+            "name": "Total Steps",
+            "usual": "N/A",
+            "value": "0.0"
+          }
+        ]
+      }
+    }
+  },
+  "generate_medgemma_plan": {
+    "time_taken_seconds": 14.31654167175293,
+    "output": {
+      "summary": "Shyam, let's craft a wonderful day focusing on boosting your energy and supporting a restful night's sleep. We'll gently increase your activity to reach your step goal, ensure your meals are packed with invigorating protein, and weave in calming routines to help you sleep more soundly, especially given your oxygen saturation and heart rate recovery trends.",
+      "schedule": {
+        "morning": [
+          {
+            "task": "Gentle Wake-Up & Hydration",
+            "time": "6:30 AM",
+            "completed": false,
+            "category": "Morning Routine",
+            "details": "Start your day by slowly waking up and hydrating with a glass of water, which helps kickstart your metabolism and boost energy."
+          },
+          {
+            "task": "Energizing Morning Walk",
+            "time": "7:00 AM",
+            "completed": false,
+            "category": "Walking",
+            "details": "Enjoy a brisk 30-minute walk to invigorate your body and contribute significantly to your 9000-step goal, supporting overall energy; please keep a moderate pace given the recent heart rate recovery alert."
+          },
+          {
+            "task": "Protein-Rich Moong Dal Cheela",
+            "time": "8:30 AM",
+            "completed": false,
+            "category": "Breakfast",
+            "details": "Savor this delicious Moong Dal Cheela for breakfast, providing about 30g protein, 40g carbs, and 15g fat to fuel your energy and muscle maintenance throughout the morning."
+          }
+        ],
+        "afternoon": [
+          {
+            "task": "High-Protein Chicken Chettinad",
+            "time": "1:00 PM",
+            "completed": false,
+            "category": "Lunch",
+            "details": "Enjoy a flavorful Chicken Chettinad with a side of whole-wheat roti, offering around 60g protein, 50g carbs, and 25g fat to sustain your energy levels without feeling sluggish."
+          },
+          {
+            "task": "Light Post-Lunch Movement",
+            "time": "2:30 PM",
+            "completed": false,
+            "category": "Movement",
+            "details": "A gentle 15-minute stroll after lunch will aid digestion and contribute further to your daily step target, promoting consistent energy."
+          }
+        ],
+        "evening": [
+          {
+            "task": "Active Community Walk",
+            "time": "6:00 PM",
+            "completed": false,
+            "category": "Walking",
+            "details": "Take an active walk around your community to help reach your 9000-step goal and maintain your energy levels before winding down for the evening."
+          },
+          {
+            "task": "Nourishing Paneer Kofta Curry",
+            "time": "7:30 PM",
+            "completed": false,
+            "category": "Dinner",
+            "details": "Enjoy a delicious Paneer Kofta Curry with brown rice for dinner, which provides approximately 55g protein, 45g carbs, and 20g fat, essential for tissue repair and sustained energy."
+          }
+        ],
+        "night": [
+          {
+            "task": "Evening Wind-Down Routine",
+            "time": "9:00 PM",
+            "completed": false,
+            "category": "Relaxation",
+            "details": "Dedicate this time to a calming combination of light reading and listening to soothing music, preparing your mind and body for restorative sleep."
+          },
+          {
+            "task": "Mindful Breathing & Prayer",
+            "time": "9:45 PM",
+            "completed": false,
+            "category": "Sleep Prep",
+            "details": "Practice gentle deep breathing exercises coupled with prayer to calm your nervous system, potentially improving oxygen saturation and reducing sleep fragmentation for a deeper rest."
+          }
+        ]
+      },
+      "health_context": {
+        "conditions_addressed": [],
+        "insights_count": 3,
+        "lab_alerts_count": 0,
+        "med_adherence_rate": null,
+        "model_used": "Gemini (gemini-2.5-flash)"
+      },
+      "active_alerts": [
+        "Poor Heart Rate Recovery",
+        "High Sleep Fragmentation",
+        "Respiratory Distress Warning"
+      ]
+    }
+  },
+  "generate_medgemma_summary": {
+    "time_taken_seconds": 13.224061250686646,
+    "output": {
+      "headline": "Your Day, Your Progress",
+      "summary": "Yesterday, you accomplished a good number of steps, yet your sleep seemed quite long and not as restful as it could be. To help boost your energy today, try to incorporate some gentle movement and enjoy a relaxing evening activity.",
+      "model_used": "Gemini (gemini-2.5-flash)"
+    }
+  }
+}

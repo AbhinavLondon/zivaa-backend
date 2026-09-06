@@ -1,0 +1,1 @@
+ALTER TABLE vitals_raw ADD COLUMN timezone VARCHAR(100);
