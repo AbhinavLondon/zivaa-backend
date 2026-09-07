@@ -1,8 +1,10 @@
+import zoneinfo
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from app.services.insights.engine import engine
 from app.services.medgemma_services import generate_medgemma_alerts, generate_medgemma_nudge
 from app.services.insights.data_fetcher import fetch_patient_context, supabase
+from app.services.insights.core import CUMULATIVE_METRICS
 from app.services.notification_templates import dispatch_notification, NotificationType
 from pydantic import BaseModel
 
@@ -43,6 +45,13 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
         latest_global_date = max(all_dates)
     
     if trigger_type == "vitals":
+        # Determine the patient's current local date for timezone-aware gating
+        try:
+            patient_tz = zoneinfo.ZoneInfo(ctx.patient_timezone) if getattr(ctx, 'patient_timezone', None) else timezone.utc
+        except Exception:
+            patient_tz = timezone.utc
+        today_local = datetime.now(patient_tz).date()
+
         has_any_established_baseline = False
         for metric_name in vitals_metrics:
             # Skip overall avg_heart_rate anomaly checks to rely strictly on the 
@@ -57,6 +66,17 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
                     has_any_established_baseline = True
                     # Only calculate Z-Score if this specific vital was updated on the fresh date
                     if latest_global_date and m.data[-1].date == latest_global_date:
+                        # CUMULATIVE METRIC GATE:
+                        # Cumulative metrics (steps, exercise_minutes, avg_speed, etc.) accumulate
+                        # across the waking day. If evaluating the current in-progress date (today)
+                        # in real-time mode, skip negative deviations (m.latest < b.mean).
+                        if metric_name in CUMULATIVE_METRICS:
+                            if latest_global_date == today_local and m.latest < b.mean:
+                                print(f"Tripwire Gatekeeper: Skipping cumulative metric '{metric_name}' negative deviation on in-progress date {latest_global_date}.")
+                                continue
+                            if evaluation_mode == "realtime" and m.latest < b.mean:
+                                continue
+
                         z_score = abs((m.latest - b.mean) / b.std)
                         if z_score >= 1.5:
                             should_wake_medgemma = True
@@ -152,6 +172,24 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
             if matching_old:
                 supabase.table("active_clinical_insights").update({"status": "resolved"}).eq("id", matching_old["id"]).execute()
         
+        # Filter out suppressed alerts (Defense-in-Depth against single-day activity drops)
+        valid_medgemma_alerts = []
+        for alert in medgemma_alerts:
+            rule_id = alert.get("rule_id", "unknown")
+            is_historical = alert.get("is_historical", False)
+            rule_lower = rule_id.lower()
+            name_lower = alert.get("name", "").lower()
+            is_step_decline_alert = any(k in rule_lower or k in name_lower for k in [
+                "decrease_steps", "decrease_step", "steps_decrease", "step_drop", 
+                "low_steps", "step_count_drop", "activity_drop", "decrease in daily steps"
+            ])
+            if is_step_decline_alert and not is_historical:
+                if latest_global_date == today_local or "single_day" in rule_lower:
+                    print(f"Tripwire: Programmatically suppressed invalid single-day/in-progress step decline alert: {rule_id}")
+                    continue
+            valid_medgemma_alerts.append(alert)
+        medgemma_alerts = valid_medgemma_alerts
+
         # 2. Insert new or update existing
         state_change_occurred = False
         

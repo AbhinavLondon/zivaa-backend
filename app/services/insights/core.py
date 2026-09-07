@@ -1,9 +1,25 @@
 from enum import Enum
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Set, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.services.insights.context import EvalContext
+
+# Metric temporal classification sets
+OVERNIGHT_METRICS: Set[str] = {
+    "sleep_hours", "sleep_efficiency_pct", "sleep_latency_mins", "waso_mins", 
+    "awakenings_count_greater_than_5mins", "resting_heart_rate", "respiratory_rate",
+    "oxygen_sat", "body_temp", "skin_temp_delta", "cough_count_night", 
+    "snoring_events_count", "sleep_stage_1_hours", "sleep_stage_2_hours",
+    "sleep_stage_3_hours", "sleep_stage_4_hours", "sleep_stage_5_hours",
+    "sleep_stage_6_hours", "sleep_stage_1_pct", "sleep_stage_2_pct",
+    "sleep_stage_3_pct", "sleep_stage_4_pct", "sleep_stage_5_pct", "sleep_stage_6_pct"
+}
+
+CUMULATIVE_METRICS: Set[str] = {
+    "steps", "avg_heart_rate", "exercise_minutes", "avg_speed", "heart_rate_recovery"
+}
+
 class RiskLevel(str, Enum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"

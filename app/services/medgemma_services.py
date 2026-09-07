@@ -4,6 +4,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, date, timedelta
 from app.config import settings
 from app.services.insights.context import EvalContext, MetricValue
+from app.services.insights.core import OVERNIGHT_METRICS, CUMULATIVE_METRICS
 from app.services.macro_calculator import calculate_daily_macros
 from app.services.loinc_dictionary import get_loinc_mapping, LOINC_DICTIONARY, get_consumer_category
 
@@ -487,8 +488,9 @@ Please reconcile these existing issues with the new data:
 
     if trigger_date:
         focus_prompt += f"\n\nCRITICAL INSTRUCTION: You are evaluating this patient on {trigger_date}. You must ONLY generate new alerts for anomalies or patterns that are actively present on {trigger_date}. Do NOT generate new alerts for isolated historical spikes or drops that occurred prior to this date. The historical data provided is strictly for establishing context and baselines."
+        focus_prompt += f"\n- CUMULATIVE METRICS GUARD: If {trigger_date} is today or in progress, cumulative metrics ({', '.join(sorted(CUMULATIVE_METRICS))}) are incomplete and still accumulating. NEVER treat a low count of steps, calories, or exercise minutes today as a drop, decline, or deficiency."
 
-    focus_prompt += "\n- CLINICAL GUIDELINE: Do not diagnose functional decline or elevated fall risk based on a single day of low step count. Require a sustained drop or immobility over at least 3 consecutive days (e.g., Tudor-Locke 2011)."
+    focus_prompt += "\n- CLINICAL GUIDELINE: Do not diagnose functional decline, elevated fall risk, or activity decrease based on a single day of low step count. Normal daily variation (charging device, weather, rest day) accounts for single-day fluctuations. Require a sustained drop or immobility over at least 3 consecutive completed days (e.g., Tudor-Locke 2011)."
     
     prompt = f"""You are MedGemma, an advanced clinical reasoning AI model.
 Review the following patient clinical chart:
@@ -1175,20 +1177,7 @@ async def generate_medgemma_summary(patient_id: str, patient_name: str = "your l
     yesterday_date = (datetime.now(timezone.utc) - timedelta(days=1)).date()
     today_date = datetime.now(timezone.utc).date()
     
-    OVERNIGHT_METRICS = {
-        "sleep_hours", "sleep_efficiency_pct", "sleep_latency_mins", "waso_mins", 
-        "awakenings_count_greater_than_5mins", "resting_heart_rate", "respiratory_rate",
-        "oxygen_sat", "body_temp", "skin_temp_delta", "cough_count_night", 
-        "snoring_events_count", "sleep_stage_1_hours", "sleep_stage_2_hours",
-        "sleep_stage_3_hours", "sleep_stage_4_hours", "sleep_stage_5_hours",
-        "sleep_stage_6_hours", "sleep_stage_1_pct", "sleep_stage_2_pct",
-        "sleep_stage_3_pct", "sleep_stage_4_pct", "sleep_stage_5_pct", "sleep_stage_6_pct"
-    }
-    
-    CUMULATIVE_METRICS = {
-        "steps", "avg_heart_rate", "exercise_minutes", "avg_speed", "heart_rate_recovery"
-    }
-
+    # Vitals classification sets (OVERNIGHT_METRICS, CUMULATIVE_METRICS) imported from app.services.insights.core
     for name, vals in vitals_dict.items():
         if vals:
             today_reading = None
