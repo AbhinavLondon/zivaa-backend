@@ -8,6 +8,9 @@ from app.services.insights.core import CUMULATIVE_METRICS
 from app.services.notification_templates import dispatch_notification, NotificationType
 from pydantic import BaseModel
 
+# In-flight concurrency lock to prevent duplicate parallel evaluations for the same patient
+_in_flight_evaluations: set[str] = set()
+
 async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals", evaluation_mode: str = "realtime", send_nudge: bool = True):
     """
     Evaluates the patient using the fast deterministic rules engine.
@@ -16,97 +19,102 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
     """
     if not patient_id:
         return
-        
-    print(f"Running deterministic tripwire for patient {patient_id} in mode {evaluation_mode}...")
-    ctx = fetch_patient_context(patient_id)
-    rules_output = engine.evaluate_patient(patient_id, ctx, evaluation_mode=evaluation_mode)
-    
-    # Filter for active insights (mostly used for Labs / Cold Start)
-    flagged_insights = [
-        insight for insight in rules_output.active_insights 
-        if insight.severity.value in ("HIGH", "MEDIUM", "CRITICAL", "LOW")
-    ]
-    print(f"Flagged deterministic insights: {[i.rule_id for i in flagged_insights]}")
-    
-    should_wake_medgemma = False
-    
-    # Calculate the absolute most recent date that any vital was recorded
-    latest_global_date = None
-    vitals_metrics = list(ctx.vitals._vitals.keys())
-    all_dates = []
-    for metric_name in vitals_metrics:
-        try:
-            m = ctx.vitals.metric(metric_name)
-            if m.has_data:
-                all_dates.append(m.data[-1].date)
-        except Exception:
-            pass
-    if all_dates:
-        latest_global_date = max(all_dates)
-    
-    if trigger_type == "vitals":
-        # Determine the patient's current local date for timezone-aware gating
-        try:
-            patient_tz = zoneinfo.ZoneInfo(ctx.patient_timezone) if getattr(ctx, 'patient_timezone', None) else timezone.utc
-        except Exception:
-            patient_tz = timezone.utc
-        today_local = datetime.now(patient_tz).date()
 
-        has_any_established_baseline = False
+    if patient_id in _in_flight_evaluations:
+        print(f"Tripwire: Evaluation already in-flight for patient {patient_id}. Skipping redundant concurrent evaluation.")
+        return
+
+    _in_flight_evaluations.add(patient_id)
+    try:
+        print(f"Running deterministic tripwire for patient {patient_id} in mode {evaluation_mode}...")
+        ctx = fetch_patient_context(patient_id)
+        rules_output = engine.evaluate_patient(patient_id, ctx, evaluation_mode=evaluation_mode)
+        
+        # Filter for active insights (mostly used for Labs / Cold Start)
+        flagged_insights = [
+            insight for insight in rules_output.active_insights 
+            if insight.severity.value in ("HIGH", "MEDIUM", "CRITICAL", "LOW")
+        ]
+        print(f"Flagged deterministic insights: {[i.rule_id for i in flagged_insights]}")
+        
+        should_wake_medgemma = False
+        
+        # Calculate the absolute most recent date that any vital was recorded
+        latest_global_date = None
+        vitals_metrics = list(ctx.vitals._vitals.keys())
+        all_dates = []
         for metric_name in vitals_metrics:
-            # Skip overall avg_heart_rate anomaly checks to rely strictly on the 
-            # more accurate time-segmented HR averages (morning, afternoon, etc.)
-            if metric_name == "avg_heart_rate":
-                continue
-                
             try:
                 m = ctx.vitals.metric(metric_name)
-                b = m.established_baseline
-                if b and b.std > 0 and m.has_data:
-                    has_any_established_baseline = True
-                    # Only calculate Z-Score if this specific vital was updated on the fresh date
-                    if latest_global_date and m.data[-1].date == latest_global_date:
-                        # CUMULATIVE METRIC GATE:
-                        # Cumulative metrics (steps, exercise_minutes, avg_speed, etc.) accumulate
-                        # across the waking day. If evaluating the current in-progress date (today)
-                        # in real-time mode, skip negative deviations (m.latest < b.mean).
-                        if metric_name in CUMULATIVE_METRICS:
-                            if latest_global_date == today_local and m.latest < b.mean:
-                                print(f"Tripwire Gatekeeper: Skipping cumulative metric '{metric_name}' negative deviation on in-progress date {latest_global_date}.")
-                                continue
-                            if evaluation_mode == "realtime" and m.latest < b.mean:
-                                continue
-
-                        z_score = abs((m.latest - b.mean) / b.std)
-                        if z_score >= 1.5:
-                            should_wake_medgemma = True
-                            print(f"Tripwire Gatekeeper: {metric_name} deviated by {z_score:.2f} std devs on {latest_global_date}!")
-                            break # Found one anomaly, wake MedGemma
+                if m.has_data:
+                    all_dates.append(m.data[-1].date)
             except Exception:
                 pass
-                
-        if not has_any_established_baseline:
-            # Cold start: Fallback to deterministic rules engine output for vitals
+        if all_dates:
+            latest_global_date = max(all_dates)
+        
+        if trigger_type == "vitals":
+            # Determine the patient's current local date for timezone-aware gating
+            try:
+                patient_tz = zoneinfo.ZoneInfo(ctx.patient_timezone) if getattr(ctx, 'patient_timezone', None) else timezone.utc
+            except Exception:
+                patient_tz = timezone.utc
+            today_local = datetime.now(patient_tz).date()
+
+            has_any_established_baseline = False
+            for metric_name in vitals_metrics:
+                # Skip overall avg_heart_rate anomaly checks to rely strictly on the 
+                # more accurate time-segmented HR averages (morning, afternoon, etc.)
+                if metric_name == "avg_heart_rate":
+                    continue
+                    
+                try:
+                    m = ctx.vitals.metric(metric_name)
+                    b = m.established_baseline
+                    if b and b.std > 0 and m.has_data:
+                        has_any_established_baseline = True
+                        # Only calculate Z-Score if this specific vital was updated on the fresh date
+                        if latest_global_date and m.data[-1].date == latest_global_date:
+                            # CUMULATIVE METRIC GATE:
+                            # Cumulative metrics (steps, exercise_minutes, avg_speed, etc.) accumulate
+                            # across the waking day. If evaluating the current in-progress date (today)
+                            # in real-time mode, skip negative deviations (m.latest < b.mean).
+                            if metric_name in CUMULATIVE_METRICS:
+                                if latest_global_date == today_local and m.latest < b.mean:
+                                    print(f"Tripwire Gatekeeper: Skipping cumulative metric '{metric_name}' negative deviation on in-progress date {latest_global_date}.")
+                                    continue
+                                if evaluation_mode == "realtime" and m.latest < b.mean:
+                                    continue
+
+                            z_score = abs((m.latest - b.mean) / b.std)
+                            if z_score >= 1.5:
+                                should_wake_medgemma = True
+                                print(f"Tripwire Gatekeeper: {metric_name} deviated by {z_score:.2f} std devs on {latest_global_date}!")
+                                break # Found one anomaly, wake MedGemma
+                except Exception:
+                    pass
+                    
+            if not has_any_established_baseline:
+                # Cold start: Fallback to deterministic rules engine output for vitals
+                if flagged_insights:
+                    should_wake_medgemma = True
+                    print("Tripwire Gatekeeper: No established baselines. Falling back to deterministic rules.")
+                    
+            if not should_wake_medgemma:
+                if flagged_insights:
+                    should_wake_medgemma = True
+                    print("Tripwire Gatekeeper: Deterministic engine caught an insight. Bypassing Z-score check.")
+        else:
+            # If trigger is "labs", always use the deterministic engine rules to gate MedGemma
             if flagged_insights:
                 should_wake_medgemma = True
-                print("Tripwire Gatekeeper: No established baselines. Falling back to deterministic rules.")
                 
         if not should_wake_medgemma:
-            if flagged_insights:
-                should_wake_medgemma = True
-                print("Tripwire Gatekeeper: Deterministic engine caught an insight. Bypassing Z-score check.")
-    else:
-        # If trigger is "labs", always use the deterministic engine rules to gate MedGemma
-        if flagged_insights:
-            should_wake_medgemma = True
+            print("Tripwire: Patient stable (Z-Score/Rules normal). MedGemma not woken up.")
+            return
             
-    if not should_wake_medgemma:
-        print("Tripwire: Patient stable (Z-Score/Rules normal). MedGemma not woken up.")
-        return
+        print("Tripwire Gatekeeper opened! Waking up MedGemma independent pattern-finder...")
         
-    print("Tripwire Gatekeeper opened! Waking up MedGemma independent pattern-finder...")
-    
-    try:
         # Fetch existing active and historical insights to prevent duplication
         active_res = supabase.table("active_clinical_insights").select("*").eq("patient_id", patient_id).neq("status", "resolved").neq("status", "resolved_stale").execute()
         existing_insights = active_res.data if active_res.data else []
@@ -284,21 +292,26 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
             nudge = await generate_medgemma_nudge(medgemma_alerts, patient_name=patient_name, patient_id=patient_id)
             print("Caregiver Nudge generated:", nudge.get("nudge_title"))
             
-            # Fetch device tokens for the patient and send push notification
-            token_res = supabase.table("device_tokens").select("fcm_token").eq("patient_id", patient_id).execute()
-            if token_res.data:
-                for token_record in token_res.data:
-                    fcm_token = token_record.get("fcm_token")
-                    if fcm_token:
-                        dispatch_notification(
-                            fcm_token=fcm_token,
-                            notification_type=NotificationType.CAREGIVER_NUDGE,
-                            dynamic_title=nudge.get("nudge_title", "New Health Insight"),
-                            dynamic_body=nudge.get("nudge_message", "Tap to view details."),
-                            extra_data={"patient_id": patient_id}
-                        )
+            if nudge.get("suppressed_duplicate"):
+                print("Tripwire: Push notification skipped because nudge was suppressed as a duplicate.")
             else:
-                print(f"No device tokens found for patient {patient_id}. Push notification skipped.")
+                # Fetch device tokens for the patient and send push notification
+                token_res = supabase.table("device_tokens").select("fcm_token").eq("patient_id", patient_id).execute()
+                if token_res.data:
+                    for token_record in token_res.data:
+                        fcm_token = token_record.get("fcm_token")
+                        if fcm_token:
+                            dispatch_notification(
+                                fcm_token=fcm_token,
+                                notification_type=NotificationType.CAREGIVER_NUDGE,
+                                dynamic_title=nudge.get("nudge_title", "New Health Insight"),
+                                dynamic_body=nudge.get("nudge_text") or nudge.get("nudge_message", "Tap to view details."),
+                                extra_data={"patient_id": patient_id}
+                            )
+                else:
+                    print(f"No device tokens found for patient {patient_id}. Push notification skipped.")
             
     except Exception as e:
         print(f"Error during Tripwire LLM evaluation: {e}")
+    finally:
+        _in_flight_evaluations.discard(patient_id)

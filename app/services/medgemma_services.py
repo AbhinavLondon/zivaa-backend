@@ -800,7 +800,40 @@ Return ONLY valid JSON. No markdown backticks, no conversational filler, no reas
             try:
                 from app.config import settings
                 from supabase import create_client
+                from datetime import datetime, timezone, timedelta
                 supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+
+                # Layer 3: 1-Hour Rate Limit with Clinical Escalation Override
+                one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+                recent_nudges_res = supabase.table("nudge_alerts") \
+                    .select("id, risk_level, nudge_title, nudge_text, why_flagged, action_steps, created_at") \
+                    .eq("patient_id", patient_id) \
+                    .gte("created_at", one_hour_ago) \
+                    .order("created_at", desc=True) \
+                    .limit(1) \
+                    .execute()
+
+                new_risk = (parsed.get("risk_level") or "LOW").upper()
+                severity_rank = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
+
+                if recent_nudges_res.data and len(recent_nudges_res.data) > 0:
+                    recent_nudge = recent_nudges_res.data[0]
+                    recent_risk = (recent_nudge.get("risk_level") or "LOW").upper()
+                    
+                    # Check for Clinical Escalation:
+                    # If new severity is strictly higher than recent severity OR if new severity is CRITICAL,
+                    # bypass the 1-hour cooldown immediately.
+                    is_escalation = (
+                        severity_rank.get(new_risk, 1) > severity_rank.get(recent_risk, 1)
+                        or new_risk == "CRITICAL"
+                    )
+                    
+                    if not is_escalation:
+                        print(f"MedGemma Nudge suppressed: Patient {patient_id} already received a {recent_risk} nudge at {recent_nudge.get('created_at')} (< 1h ago). New risk is {new_risk}. Duplicate suppressed.")
+                        recent_nudge["suppressed_duplicate"] = True
+                        return recent_nudge
+                    else:
+                        print(f"MedGemma Nudge CLINICAL ESCALATION: Patient {patient_id} escalated from {recent_risk} to {new_risk}! Bypassing 1-hour cooldown.")
 
                 nudge_record = {
                     "patient_id": patient_id,

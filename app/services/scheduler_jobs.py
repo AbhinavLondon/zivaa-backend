@@ -559,6 +559,18 @@ async def run_morning_nudge_dispatch():
             elif nudge_pref == "LOW": should_nudge = True
             
             if should_nudge:
+                # Layer 4: Check if patient already received a nudge in the last 4 hours (e.g. from an early morning tripwire sync)
+                four_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=4)).isoformat()
+                recent_check = supabase.table("nudge_alerts") \
+                    .select("id, created_at, nudge_title") \
+                    .eq("patient_id", patient_id) \
+                    .gte("created_at", four_hours_ago) \
+                    .limit(1) \
+                    .execute()
+                if recent_check.data:
+                    print(f"Morning Nudge Dispatch: Patient {patient_name} already received a nudge within the last 4 hours ({recent_check.data[0].get('created_at')}). Skipping scheduled 8 AM nudge.")
+                    continue
+
                 print(f"Dispatching Morning Caregiver Nudge for {patient_name}...")
                 nudge = await generate_medgemma_nudge(alerts, patient_name=patient_name, patient_id=patient_id)
                 print("Morning Caregiver Nudge dispatched:", nudge.get("nudge_title"))

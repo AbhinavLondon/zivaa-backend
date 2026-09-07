@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, HTTPException, status, Query
 from app.utils.crypto import encrypt_text, decrypt_text
 from pydantic import BaseModel, Field
@@ -19,6 +20,37 @@ from app.services.medgemma_services import (
 )
 
 router = APIRouter()
+
+# Timer dictionary to coalesce rapid burst sync chunks from mobile clients
+_debounce_timers: Dict[str, asyncio.Task] = {}
+
+def schedule_debounced_tripwire(patient_id: str, delay_seconds: int = 25):
+    """
+    Schedules a tripwire evaluation after a quiet period of `delay_seconds`.
+    If another sync chunk arrives before the timer expires, the existing timer is cancelled
+    and reset, coalescing all burst sync chunks into a single unified evaluation.
+    """
+    async def _debounced_worker():
+        try:
+            await asyncio.sleep(delay_seconds)
+            print(f"[DEBOUNCE] {delay_seconds}s quiet period elapsed for patient {patient_id}. Dispatching unified Tripwire evaluation.")
+            await run_tripwire_evaluation(patient_id, "vitals")
+        except asyncio.CancelledError:
+            # Expected when a newer sync chunk resets the debounce timer
+            pass
+        except Exception as e:
+            print(f"[DEBOUNCE] Error in debounced tripwire worker for patient {patient_id}: {e}")
+        finally:
+            if _debounce_timers.get(patient_id) is task:
+                _debounce_timers.pop(patient_id, None)
+
+    existing_timer = _debounce_timers.get(patient_id)
+    if existing_timer and not existing_timer.done():
+        existing_timer.cancel()
+        print(f"[DEBOUNCE] Resetting debounce timer for patient {patient_id} (new sync chunk arrived).")
+
+    task = asyncio.create_task(_debounced_worker())
+    _debounce_timers[patient_id] = task
 
 
 class MetricRecord(BaseModel):
@@ -327,8 +359,8 @@ async def sync_complete(payload: SyncCompletePayload, background_tasks: Backgrou
         except Exception as e:
             print(f"Failed to insert into sync_logs: {e}")
 
-    # 1. Dispatch Tripwire Evaluation
-    background_tasks.add_task(run_tripwire_evaluation, payload.patient_id, "vitals")
+    # 1. Dispatch Tripwire Evaluation (Debounced 25s to coalesce burst sync chunks)
+    schedule_debounced_tripwire(payload.patient_id, delay_seconds=25)
     
     # 2. Event-Driven Morning Generation Pipeline
     try:
