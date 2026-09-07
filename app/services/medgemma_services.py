@@ -1948,13 +1948,13 @@ Provide 2-3 reassuring sentences giving the big picture for {patient_name}. Spec
 
 **Areas to Keep an Eye On**:
 Provide 1 clear bullet point per key finding or related cluster of out-of-range markers:
-- Use bullet format: `• **[Biomarker/Group Name]**: [Value vs Target]. [Plain-English explanation: why it matters for seniors, whether it is mildly or moderately out of range, and reassurance that minor fluctuations are common.]`
-(If nothing is out of range, write: `• All tested biomarkers are within standard target ranges.`)
+- Use bullet format: `- **[Biomarker/Group Name]**: [Value vs Target]. [Plain-English explanation: why it matters for seniors, whether it is mildly or moderately out of range, and reassurance that minor fluctuations are common.]`
+(If nothing is out of range, write: `- All tested biomarkers are within standard target ranges.`)
 
 **Suggested Questions for Your Doctor**:
 Provide 2 concrete, thoughtful, and high-yield questions {patient_name} or their family caregiver can bring up at their next appointment with their doctor (e.g. regarding dietary adjustments, vitamin supplementation like Vitamin D3, or whether a routine repeat test in 3 months makes sense).
-- Use bullet format: `• [Question 1]`
-- Use bullet format: `• [Question 2]`
+- Use bullet format: `- [Question 1]`
+- Use bullet format: `- [Question 2]`
 
 Do NOT use alarming language. Be medically grounded, warm, and practical.
 """
@@ -1967,7 +1967,19 @@ Do NOT use alarming language. Be medically grounded, warm, and practical.
             cleaned = cleaned[3:]
         if cleaned.endswith("```"):
             cleaned = cleaned[:-3]
-        return cleaned.strip()
+        cleaned = cleaned.strip()
+        
+        # Normalize bullets to standard markdown '- '
+        normalized_lines = []
+        for line in cleaned.split("\n"):
+            t = line.strip()
+            if t.startswith("• "):
+                normalized_lines.append("- " + t[2:])
+            elif t.startswith("*   ") or t.startswith("* "):
+                normalized_lines.append("- " + t.lstrip("*").strip())
+            else:
+                normalized_lines.append(line)
+        return "\n".join(normalized_lines).strip()
     except Exception as e:
         print(f"Error generating overall report summary: {e}")
         return "Your lab report has been generated. Most of your results have been processed. Please review the detailed categories below or ask your physician."
