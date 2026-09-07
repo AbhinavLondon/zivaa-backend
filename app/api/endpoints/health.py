@@ -865,14 +865,26 @@ async def get_lab_category_summary(report_id: str, category: str, patient_name: 
     try:
         from app.services.insights.data_fetcher import supabase
         # 1. Fetch the report to see if we already have a summary cached
-        report_res = supabase.table("fhir_diagnostic_reports").select("category_level_explanation").eq("id", report_id).execute()
+        report_res = supabase.table("fhir_diagnostic_reports").select("patient_id, category_level_explanation").eq("id", report_id).execute()
         if not report_res.data:
             raise HTTPException(status_code=404, detail="Diagnostic report not found")
             
-        explanations = report_res.data[0].get("category_level_explanation") or {}
+        report_data = report_res.data[0]
+        explanations = report_data.get("category_level_explanation") or {}
         
-        if category in explanations and explanations[category]:
-            return {"summary": explanations[category]}
+        # Check if valid non-fallback cached summary exists
+        cached = explanations.get(category)
+        if cached and not cached.startswith("No recent data") and not cached.startswith("We're still analyzing"):
+            return {"summary": cached}
+            
+        # Resolve real patient first name if default is used
+        if patient_name == "your loved one" and report_data.get("patient_id"):
+            try:
+                pat_res = supabase.table("patient_profiles").select("full_name").eq("id", report_data["patient_id"]).execute()
+                if pat_res.data and pat_res.data[0].get("full_name"):
+                    patient_name = pat_res.data[0]["full_name"].strip().split()[0]
+            except Exception:
+                pass
             
         # 2. No cached summary found, fetch observations
         obs_res = supabase.table("fhir_observations").select("*").eq("report_id", report_id).execute()
@@ -903,9 +915,10 @@ async def get_lab_category_summary(report_id: str, category: str, patient_name: 
         # 3. Generate summary
         summary_text = await generate_category_summary(category_obs, category, patient_name)
         
-        # 4. Save back to DB
-        explanations[category] = summary_text
-        supabase.table("fhir_diagnostic_reports").update({"category_level_explanation": explanations}).eq("id", report_id).execute()
+        # 4. Save back to DB only if a valid summary was generated
+        if not summary_text.startswith("No recent data") and not summary_text.startswith("We're still analyzing"):
+            explanations[category] = summary_text
+            supabase.table("fhir_diagnostic_reports").update({"category_level_explanation": explanations}).eq("id", report_id).execute()
         
         return {"summary": summary_text}
     except Exception as e:
