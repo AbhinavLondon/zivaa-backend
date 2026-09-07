@@ -1941,20 +1941,27 @@ Summary of Findings:
 Instructions:
 Write an informative, beautifully structured summary using clean markdown.
 Start directly with `**Overall Health**`. Do NOT include any conversational preamble or greeting (such as "Here is a summary...").
-Strictly adhere to this 3-section layout:
 
-**Overall Health**:
-Provide 2-3 reassuring sentences giving the big picture for {patient_name}. Specifically acknowledge the vital organ systems that are healthy and functioning well (e.g. mention normal categories like {normal_text}). Keep the tone reassuring and calm—seniors often worry about lab reports.
+CRITICAL FORMATTING REQUIREMENT:
+You MUST place an empty blank line between every section, and an empty blank line between every single bullet point so that each bullet point clearly starts on a new line and is easy to read.
 
-**Areas to Keep an Eye On**:
-Provide 1 clear bullet point per key finding or related cluster of out-of-range markers:
-- Use bullet format: `- **[Biomarker/Group Name]**: [Value vs Target]. [Plain-English explanation: why it matters for seniors, whether it is mildly or moderately out of range, and reassurance that minor fluctuations are common.]`
+Strictly adhere to this layout:
+
+**Overall Health**
+
+[Provide 2-3 reassuring sentences giving the big picture for {patient_name}. Specifically acknowledge the vital organ systems that are healthy and functioning well (e.g. mention normal categories like {normal_text}). Keep the tone reassuring and calm.]
+
+**Areas to Keep an Eye On**
+
+- **[Biomarker/Group Name]**: [Value vs Target]. [Plain-English explanation: why it matters for seniors, whether it is mildly or moderately out of range, and reassurance that minor fluctuations are common.]
+
 (If nothing is out of range, write: `- All tested biomarkers are within standard target ranges.`)
 
-**Suggested Questions for Your Doctor**:
-Provide 2 concrete, thoughtful, and high-yield questions {patient_name} or their family caregiver can bring up at their next appointment with their doctor (e.g. regarding dietary adjustments, vitamin supplementation like Vitamin D3, or whether a routine repeat test in 3 months makes sense).
-- Use bullet format: `- [Question 1]`
-- Use bullet format: `- [Question 2]`
+**Suggested Questions for Your Doctor**
+
+- [Question 1]
+
+- [Question 2]
 
 Do NOT use alarming language. Be medically grounded, warm, and practical.
 """
@@ -1969,17 +1976,38 @@ Do NOT use alarming language. Be medically grounded, warm, and practical.
             cleaned = cleaned[:-3]
         cleaned = cleaned.strip()
         
-        # Normalize bullets to standard markdown '- '
-        normalized_lines = []
-        for line in cleaned.split("\n"):
-            t = line.strip()
-            if t.startswith("• "):
-                normalized_lines.append("- " + t[2:])
-            elif t.startswith("*   ") or t.startswith("* "):
-                normalized_lines.append("- " + t.lstrip("*").strip())
-            else:
-                normalized_lines.append(line)
-        return "\n".join(normalized_lines).strip()
+        # Format spacing so every bullet and header starts on a new line with clear blank-line separation
+        lines = cleaned.split("\n")
+        formatted_lines = []
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                if formatted_lines and formatted_lines[-1] != "":
+                    formatted_lines.append("")
+                continue
+            if line.startswith("• "):
+                line = "- " + line[2:]
+            elif line.startswith("*   ") or line.startswith("* "):
+                line = "- " + line.lstrip("*").strip()
+
+            is_header = line.startswith("**") and (line.endswith("**") or line.endswith("**:"))
+            is_bullet = line.startswith("- ") or line.startswith("• ")
+
+            if (is_header or is_bullet) and formatted_lines and formatted_lines[-1] != "":
+                formatted_lines.append("")
+
+            formatted_lines.append(line)
+
+            if is_header:
+                formatted_lines.append("")
+
+        result = []
+        for l in formatted_lines:
+            if l == "" and result and result[-1] == "":
+                continue
+            result.append(l)
+
+        return "\n".join(result).strip()
     except Exception as e:
         print(f"Error generating overall report summary: {e}")
         return "Your lab report has been generated. Most of your results have been processed. Please review the detailed categories below or ask your physician."
