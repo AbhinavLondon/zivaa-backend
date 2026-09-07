@@ -1841,6 +1841,137 @@ Task: Write a maximum of 2 sentences summarizing what these specific results mea
         print(f"Error generating category summary for {category_name}: {e}")
         return f"We're still analyzing your {category_name} results. Check back later for a detailed summary."
 
+async def generate_overall_report_summary(
+    observations: List[Dict[str, Any]], 
+    patient_name: str = "your loved one", 
+    performer: str = "Lab",
+    report_name: str = "Lab Report"
+) -> str:
+    """
+    Generates a structured, clinical, empathetic summary for an entire lab report
+    based on the structured observations.
+    Follows a 3-part layout:
+    1. Overall Health (Reassurance, normal organ systems)
+    2. Areas to Keep an Eye On (Out-of-range markers with plain-English context)
+    3. Suggested Questions for Your Doctor (High-yield discussion items)
+    """
+    if not observations:
+        return "Your lab report is ready. Please consult your physician to review your detailed results."
+
+    out_of_range = []
+    all_consumer_cats = set()
+
+    for row in observations:
+        res = row.get("resource") or row
+        name = res.get("code", {}).get("text") or row.get("loinc_code") or "Unknown Test"
+        
+        # Check interpretation
+        interp = ""
+        if "interpretation" in res and res["interpretation"]:
+            interp = res["interpretation"][0].get("text", "")
+            
+        val = row.get("value_numeric")
+        if val is None and "valueQuantity" in res:
+            val = res["valueQuantity"].get("value")
+            
+        unit = row.get("unit")
+        if not unit and "valueQuantity" in res:
+            unit = res["valueQuantity"].get("unit", "")
+        unit = unit or ""
+
+        ref_low = row.get("reference_low")
+        ref_high = row.get("reference_high")
+        if (ref_low is None or ref_high is None) and "referenceRange" in res and res["referenceRange"]:
+            rr = res["referenceRange"][0]
+            if ref_low is None:
+                ref_low = rr.get("low", {}).get("value")
+            if ref_high is None:
+                ref_high = rr.get("high", {}).get("value")
+
+        # Find consumer category
+        cat = None
+        for c in res.get("category", []):
+            for coding in c.get("coding", []):
+                if coding.get("system") == "https://zivaa.com/consumer-category":
+                    cat = coding.get("display")
+                    break
+            if cat:
+                break
+            if c.get("text"):
+                cat = c["text"]
+                break
+        if not cat:
+            cat = "General"
+        all_consumer_cats.add(cat)
+
+        is_out = False
+        if interp and ("out of range" in interp.lower() or "high" in interp.lower() or "low" in interp.lower() or "abnormal" in interp.lower()):
+            is_out = True
+        elif ref_low is not None and ref_high is not None and val is not None and ref_low > -90000 and ref_high > -90000:
+            if val < ref_low or val > ref_high:
+                is_out = True
+
+        if is_out:
+            ref_str = f"{ref_low} - {ref_high} {unit}".strip() if (ref_low is not None and ref_high is not None and ref_low > -90000) else "Standard Target"
+            out_of_range.append({
+                "test_name": name,
+                "value": f"{val} {unit}".strip() if val is not None else "Out of range",
+                "target": ref_str,
+                "category": cat
+            })
+
+    out_cats = {o["category"] for o in out_of_range}
+    normal_cats = sorted([c for c in all_consumer_cats if c not in out_cats and c != "General"])
+
+    out_lines = [f"- {o['test_name']} ({o['category']}): {o['value']} (Target: {o['target']})" for o in out_of_range]
+    out_text = "\n".join(out_lines) if out_lines else "None - all biomarkers tested were within normal ranges."
+    normal_text = ", ".join(normal_cats) if normal_cats else "None"
+
+    prompt = f"""You are an expert, compassionate clinical AI physician writing a personalized, comprehensive, and reassuring summary of a senior patient's lab report.
+The patient's name is {patient_name}.
+Report Name / Panel: {report_name}
+Laboratory / Performer: {performer}
+
+Summary of Findings:
+- Total biomarkers analyzed: {len(observations)}
+- Categories completely within normal ranges (healthy & stable): {normal_text}
+- Biomarkers outside reference ranges:
+{out_text}
+
+Instructions:
+Write an informative, beautifully structured summary using clean markdown.
+Start directly with `**Overall Health**`. Do NOT include any conversational preamble or greeting (such as "Here is a summary...").
+Strictly adhere to this 3-section layout:
+
+**Overall Health**:
+Provide 2-3 reassuring sentences giving the big picture for {patient_name}. Specifically acknowledge the vital organ systems that are healthy and functioning well (e.g. mention normal categories like {normal_text}). Keep the tone reassuring and calm—seniors often worry about lab reports.
+
+**Areas to Keep an Eye On**:
+Provide 1 clear bullet point per key finding or related cluster of out-of-range markers:
+- Use bullet format: `• **[Biomarker/Group Name]**: [Value vs Target]. [Plain-English explanation: why it matters for seniors, whether it is mildly or moderately out of range, and reassurance that minor fluctuations are common.]`
+(If nothing is out of range, write: `• All tested biomarkers are within standard target ranges.`)
+
+**Suggested Questions for Your Doctor**:
+Provide 2 concrete, thoughtful, and high-yield questions {patient_name} or their family caregiver can bring up at their next appointment with their doctor (e.g. regarding dietary adjustments, vitamin supplementation like Vitamin D3, or whether a routine repeat test in 3 months makes sense).
+- Use bullet format: `• [Question 1]`
+- Use bullet format: `• [Question 2]`
+
+Do NOT use alarming language. Be medically grounded, warm, and practical.
+"""
+    try:
+        summary = await _call_medgemma(prompt, json_mode=False)
+        cleaned = summary.strip()
+        if cleaned.startswith("```markdown"):
+            cleaned = cleaned[11:]
+        if cleaned.startswith("```"):
+            cleaned = cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        return cleaned.strip()
+    except Exception as e:
+        print(f"Error generating overall report summary: {e}")
+        return "Your lab report has been generated. Most of your results have been processed. Please review the detailed categories below or ask your physician."
+
 async def generate_retest_nudge(patient_id: str, patient_name: str, historical_insights: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Generates an administrative nudge reminding the patient to book lab tests for overdue biomarkers."""
     if not historical_insights:

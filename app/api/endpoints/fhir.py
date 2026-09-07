@@ -138,6 +138,30 @@ async def _process_and_ingest_bundle(patient_id: str, file_bytes: bytes, mime_ty
             
         res = process_fhir_bundle_internal(patient_id, bundle, effective_date_override)
         if res.get("status") == "success" and not res.get("is_draft"):
+            report_id = res.get("report_id")
+            if report_id:
+                try:
+                    from app.services.medgemma_services import generate_overall_report_summary
+                    obs_res = supabase.table("fhir_observations").select("*").eq("report_id", report_id).execute()
+                    if obs_res.data:
+                        patient_name = "your loved one"
+                        pat_res = supabase.table("patients").select("full_name").eq("id", patient_id).execute()
+                        if pat_res.data and pat_res.data[0].get("full_name"):
+                            patient_name = pat_res.data[0]["full_name"].strip().split()[0]
+                        performer = res.get("performer", "Laboratory")
+                        report_name = res.get("report_name", "Lab Report")
+
+                        rich_summary = await generate_overall_report_summary(
+                            observations=obs_res.data,
+                            patient_name=patient_name,
+                            performer=performer,
+                            report_name=report_name
+                        )
+                        if rich_summary and not rich_summary.startswith("Your lab report has been generated. Most of your results"):
+                            supabase.table("fhir_diagnostic_reports").update({"summary_explanation": rich_summary}).eq("id", report_id).execute()
+                except Exception as ex:
+                    print(f"Failed to generate rich report summary: {ex}")
+
             await run_tripwire_evaluation(patient_id, trigger_type="labs")
             
             # Dispatch push notification to the client
@@ -289,6 +313,8 @@ def process_fhir_bundle_internal(patient_id: str, bundle: dict, effective_date_o
             "status": "success",
             "message": "FHIR Bundle successfully ingested.",
             "report_id": report_id,
+            "performer": report_data.get("performer", "Laboratory"),
+            "report_name": diagnostic_report.get("code", {}).get("text", "Lab Report"),
             "observations_count": len(obs_inserts),
             "is_draft": is_draft
         }
