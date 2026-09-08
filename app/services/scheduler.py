@@ -14,16 +14,17 @@ async def stop_scheduler():
     print("APScheduler stopped.")
 
 def setup_cron_jobs():
-    from app.services.scheduler_jobs import run_morning_fallback, run_daily_longevity_fallback, run_weekly_caregiver_digest, run_midday_checkins, run_evening_checkins,
-    scheduler.add_job(
+    from app.services.scheduler_jobs import (
+        run_morning_fallback,
+        run_daily_longevity_fallback,
+        run_weekly_caregiver_digest,
+        run_midday_checkins,
+        run_evening_checkins,
         run_latenight_checkins,
-        'cron',
-        minute=5, # run at XX:05
-        id='latenight_checkins_job',
-        replace_existing=True,
-        misfire_grace_time=None
+        run_weekly_planning,
+        run_weekly_longevity_strategy,
+        run_weekly_retest_digest,
     )
- run_latenight_checkins, run_weekly_planning, run_weekly_longevity_strategy, run_weekly_retest_digest
     
     # Run daily longevity fallback
     scheduler.add_job(
@@ -59,18 +60,19 @@ def setup_cron_jobs():
     # Run evening checkin (Target: 8:00 PM local time)
     scheduler.add_job(
         run_evening_checkins,
-    scheduler.add_job(
-        run_latenight_checkins,
-        'cron',
-        minute=5, # run at XX:05
-        id='latenight_checkins_job',
-        replace_existing=True,
-        misfire_grace_time=None
-    )
-
         'cron',
         minute='*/15',
         id='evening_checkins_job',
+        replace_existing=True,
+        misfire_grace_time=None
+    )
+    
+    # Run late-night checkin (Target: 12:00 AM midnight local time)
+    scheduler.add_job(
+        run_latenight_checkins,
+        'cron',
+        minute='*/15',
+        id='latenight_checkins_job',
         replace_existing=True,
         misfire_grace_time=None
     )
