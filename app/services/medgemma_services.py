@@ -1820,19 +1820,19 @@ async def generate_category_summary(observations: List[Dict[str, Any]], category
     obs_text = "\n".join(obs_lines)
     
     prompt = f"""You are a gentle, empathetic clinical AI writing a very brief summary of a specific category from a senior patient's lab report.
-The patient is referred to as "{patient_name}".
 
 Category: {category_name}
 Recent Biomarker Results:
 {obs_text}
 
-Task: Write a maximum of 2 sentences summarizing what these specific results mean for their {category_name} health.
-- Be encouraging but medically accurate.
+Task: Write a maximum of 2 sentences summarizing what these specific results mean for the patient's {category_name} health.
+- Always address the patient directly in the second person (e.g., "Your...", "You...").
+- Do NOT include any name or greeting at the start (such as "Hello...", "Ranjit,...", or "[Name],..."). Start directly with the health summary.
+- Be encouraging, calm, and medically accurate.
 - DO NOT use complex medical jargon.
-- If everything is normal, reassure them.
-- If something is slightly off, mention it gently without causing alarm (e.g., "A few things are slightly out of balance, such as your...").
-- Speak directly to the patient (use "your", "you").
-- No bullet points, just a short conversational paragraph.
+- If everything is normal, reassure them (e.g., "Your kidney markers are looking very good, with all indicators comfortably within healthy target ranges.").
+- If something is slightly off, mention it gently without causing alarm (e.g., "Most of your markers look healthy, though your Vitamin D is slightly lower than the standard target range.").
+- No bullet points, just a short, clear paragraph of 1-2 sentences.
 """
     try:
         summary = await _call_medgemma(prompt, json_mode=False)
@@ -2051,3 +2051,15 @@ Output strictly in JSON format:
             "nudge_title": "Time for a Lab Checkup",
             "nudge_text": "Some of your lab results are getting a bit old. Consider booking a quick lab test soon to keep your health data up to date."
         }
+
+
+async def generate_latenight_checkin(patient_name: str, recent_sleep_hours: list) -> str:
+    """
+    Generates a late-night wind down message based on sleep history.
+    """
+    avg_sleep = sum(recent_sleep_hours) / len(recent_sleep_hours) if recent_sleep_hours else 8.0
+    
+    if avg_sleep < 6.5:
+        return f"We noticed you haven't been getting enough rest over the last week. Your body repairs itself during deep sleep—let's prioritize getting to bed on time tonight to break the cycle."
+    else:
+        return f"It's getting late. Maintaining your great sleep routine is key to your longevity. Time to wind down."

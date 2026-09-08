@@ -852,3 +852,53 @@ async def run_daily_longevity_fallback():
         except Exception as e:
             print(f"Failed to run daily longevity fallback for {patient_id}: {e}")
 
+
+async def run_latenight_checkins():
+    print("Running late-night checkins...")
+    from app.services.medgemma_services import generate_latenight_checkin
+    from datetime import datetime, timezone, timedelta
+    
+    res = supabase.table("patients").select("id, full_name, timezone").execute()
+    if not res.data:
+        return
+        
+    for p in res.data:
+        if not is_target_local_hour(p.get("timezone"), 0):
+            continue
+            
+        patient_id = p["id"]
+        patient_name = p.get("full_name", "Patient")
+        
+        try:
+            from app.services.date_utils import get_local_date_str
+            seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+            
+            # Fetch recent sleep data
+            vitals_res = supabase.table("patient_vitals").select("value").eq("patient_id", patient_id).eq("vital_type", "sleep").gte("date", seven_days_ago).execute()
+            
+            sleep_hours = []
+            if vitals_res.data:
+                for v in vitals_res.data:
+                    val = v.get("value")
+                    if val is not None:
+                        try:
+                            sleep_hours.append(float(val))
+                        except ValueError:
+                            pass
+            
+            message = await generate_latenight_checkin(patient_name, sleep_hours)
+            
+            payload = {
+                "patient_id": patient_id,
+                "insight_date": get_local_date_str(p.get("timezone")),
+                "insight_type": "LATENIGHT_CHECKIN",
+                "insight_text": message
+            }
+            existing_res = supabase.table("user_insights").select("id").eq("patient_id", patient_id).eq("insight_date", payload["insight_date"]).eq("insight_type", "LATENIGHT_CHECKIN").execute()
+            if existing_res.data:
+                supabase.table("user_insights").update({"insight_text": message}).eq("id", existing_res.data[0]["id"]).execute()
+            else:
+                supabase.table("user_insights").insert(payload).execute()
+                
+        except Exception as e:
+            print(f"Failed to generate late-night checkin for {patient_id}: {e}")

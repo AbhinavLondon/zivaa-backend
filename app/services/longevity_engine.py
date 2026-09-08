@@ -126,19 +126,34 @@ async def generate_weekly_strategy(patient_id: str):
         print(f"Cold start detected for {patient_id}. Generating Onboarding Baseline...")
         onboarding_baseline = [
             {
+                "id": str(uuid.uuid4()),
                 "category": "App Setup",
-                "baseline_target": "Familiarize yourself with the Zivaa AI Coach.",
-                "why_it_matters": "The coach is your primary interface for sharing symptoms and preferences. The more it knows, the better your Longevity Plan gets."
+                "title": "Familiarize yourself with the Zivaa AI Coach",
+                "description": "Spend 5 minutes chatting with the AI Coach and tell it about your primary health goals.",
+                "reasoning": "The coach is your primary interface for sharing symptoms and preferences. The more it knows, the better your Longevity Plan gets.",
+                "is_modified_today": False,
+                "modification_note": None,
+                "is_new_from_coach": False
             },
             {
+                "id": str(uuid.uuid4()),
                 "category": "Nutrition",
-                "baseline_target": "Establish your dietary baseline.",
-                "why_it_matters": "We need to understand your current eating habits to suggest meaningful nutritional improvements."
+                "title": "Establish your dietary baseline",
+                "description": "Log what you ate for breakfast or lunch today.",
+                "reasoning": "We need to understand your current eating habits to suggest meaningful nutritional improvements.",
+                "is_modified_today": False,
+                "modification_note": None,
+                "is_new_from_coach": False
             },
             {
+                "id": str(uuid.uuid4()),
                 "category": "Mobility",
-                "baseline_target": "Assess your current physical activity level.",
-                "why_it_matters": "Mobility is a core pillar of longevity. A quick assessment helps us tailor safe exercises."
+                "title": "Assess your current physical activity level",
+                "description": "Sync your smartwatch or wearable device if you have one, or log a short walk.",
+                "reasoning": "Mobility is a core pillar of longevity. A quick assessment helps us tailor safe exercises.",
+                "is_modified_today": False,
+                "modification_note": None,
+                "is_new_from_coach": False
             }
         ]
         
@@ -284,37 +299,39 @@ async def generate_daily_protocols(patient_id: str):
     # Check if this is an Onboarding Baseline
     is_onboarding = False
     if baseline_data and len(baseline_data) > 0:
-        if baseline_data[0].get("category") == "App Setup" and "AI Coach" in baseline_data[0].get("baseline_target", ""):
+        first_item = baseline_data[0]
+        if first_item.get("category") == "App Setup" and (
+            "AI Coach" in first_item.get("title", "") or "AI Coach" in first_item.get("baseline_target", "")
+        ):
             is_onboarding = True
             
     if is_onboarding:
         print(f"Onboarding Baseline detected for {patient_id}. Skipping Daily LLM generation.")
-        daily_protocols = [
-            {
-                "title": "Chat with AI Coach",
-                "category": "App Setup",
-                "description": "Spend 5 minutes chatting with the AI Coach and tell it about your primary health goals.",
-                "reasoning": "This helps us understand your unique situation to build your personalized plan."
-            },
-            {
-                "title": "Log a Meal",
-                "category": "Nutrition",
-                "description": "Log what you ate for breakfast or lunch today.",
-                "reasoning": "Logging your first meal helps us calibrate your dietary baseline."
-            },
-            {
-                "title": "Connect Wearable",
-                "category": "Mobility",
-                "description": "Sync your smartwatch or wearable device if you have one.",
-                "reasoning": "Automatic tracking provides the most accurate data for your longevity journey."
-            }
-        ]
+        daily_protocols = []
+        for p in baseline_data:
+            title = p.get("title") or p.get("baseline_target") or "Habit"
+            category = p.get("category", "General")
+            description = p.get("description") or p.get("why_it_matters") or ""
+            reasoning = p.get("reasoning") or p.get("why_it_matters") or ""
+            protocol_id = p.get("id") or str(uuid.uuid4())
+            daily_protocols.append({
+                "id": protocol_id,
+                "category": category,
+                "title": title,
+                "description": description,
+                "reasoning": reasoning,
+                "is_modified_today": False,
+                "modification_note": None,
+                "is_new_from_coach": False
+            })
         
-        supabase.table("patient_longevity_protocols").insert({
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        supabase.table("patient_longevity_protocols").upsert({
             "patient_id": patient_id,
-            "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-            "protocols": daily_protocols
-        }).execute()
+            "effective_date": today_str,
+            "protocols": daily_protocols,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }, on_conflict="patient_id, effective_date").execute()
         return
         
     baseline_protocols = json.dumps(baseline_data)

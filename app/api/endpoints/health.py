@@ -912,7 +912,7 @@ async def get_lab_category_summary(report_id: str, category: str, patient_name: 
         # Resolve real patient first name if default is used
         if patient_name == "your loved one" and report_data.get("patient_id"):
             try:
-                pat_res = supabase.table("patient_profiles").select("full_name").eq("id", report_data["patient_id"]).execute()
+                pat_res = supabase.table("patients").select("full_name").eq("id", report_data["patient_id"]).execute()
                 if pat_res.data and pat_res.data[0].get("full_name"):
                     patient_name = pat_res.data[0]["full_name"].strip().split()[0]
             except Exception:
