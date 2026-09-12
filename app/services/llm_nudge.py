@@ -5,6 +5,11 @@ import json
 from typing import Dict, Any, List
 from app.config import settings
 from app.services.insights.core import InsightResult
+from app.services.multilingual import (
+    get_patient_language,
+    get_proactive_language_directive,
+    get_fallback_text,
+)
 
 async def generate_clinical_nudge(insights: Any, patient_name: str = "Ranjit", patient_id: str = None) -> Dict[str, Any]:
     """
@@ -13,8 +18,18 @@ async def generate_clinical_nudge(insights: Any, patient_name: str = "Ranjit", p
       1. A list of InsightResult objects from the Rules Engine.
       2. A dictionary of features (vitals) from the Ingest flow.
     """
+    pref_lang = get_patient_language(patient_id)
+
     # 1. Handle empty inputs
     if not insights:
+        if pref_lang.lower() == "hindi":
+            return {
+                "risk_level": "LOW",
+                "nudge_title": "सब कुछ स्थिर है",
+                "nudge_text": f"आज {patient_name} के लिए कोई गंभीर स्वास्थ्य अलर्ट नहीं मिला। वाइटल्स स्थिर दिख रहे हैं।",
+                "why_flagged": "कोई सक्रिय अलर्ट नहीं।",
+                "action_steps": "किसी विशेष कार्रवाई की आवश्यकता नहीं है। अपनी दिनचर्या जारी रखें!"
+            }
         return {
             "risk_level": "LOW",
             "nudge_title": "All is stable",
@@ -51,27 +66,37 @@ async def generate_clinical_nudge(insights: Any, patient_name: str = "Ranjit", p
     
         Instructions:
         1. Determine the appropriate overall Risk Level (LOW, MEDIUM, HIGH) based on the metrics. (Recommended: {highest_severity_str}).
-        2. Write in a warm, comforting, less-clinical tone. Speak in plain English like a reassuring friend or family nurse to the caregiver, not a cold algorithm.
+        2. Write in a warm, comforting, less-clinical tone. Speak like a reassuring friend or family nurse to the caregiver, not a cold algorithm.
         3. Exclude dense medical terminology (no jargon).
         4. UNDER THE "why_flagged" SECTION, YOU MUST PROVIDE a simple, non-clinical explanation of why we are flagging this, summarizing any deviations. DO NOT include any visual graphs.
+        5. {get_proactive_language_directive(pref_lang, content_type="nudge")}
         
         Format the response as exact JSON:
         {{
           "risk_level": "LOW | MEDIUM | HIGH",
-          "nudge_title": "Warm, human-friendly title",
-          "nudge_text": "Empathetic, comforting description in plain conversational English.",
-          "why_flagged": "Why we are flagging this (a simple, non-clinical explanation of why these vitals were flagged or why they are stable)",
-          "action_steps": "What you can do about it (clear, gentle next steps)"
+          "nudge_title": "Warm, human-friendly title in {pref_lang}",
+          "nudge_text": "Empathetic, comforting description in {pref_lang}.",
+          "why_flagged": "Why we are flagging this in {pref_lang}",
+          "action_steps": "What you can do about it in {pref_lang}"
         }}
         """
         
-        fallback_nudge = {
-            "risk_level": highest_severity_str,
-            "nudge_title": "Vitals Sync Completed" if highest_severity_str == "LOW" else "Health Alert Detected",
-            "nudge_text": f"Vitals for {patient_name} have been updated successfully and appear stable." if highest_severity_str == "LOW" else f"We noticed some deviations in {patient_name}'s vitals today.",
-            "why_flagged": "Vitals are within normal historical baseline ranges." if highest_severity_str == "LOW" else "One or more vitals (heart rate, blood pressure) deviated from baseline.",
-            "action_steps": "Maintain the current daily care plan." if highest_severity_str == "LOW" else "Please check in on them and monitor vitals closely."
-        }
+        if pref_lang.lower() == "hindi":
+            fallback_nudge = {
+                "risk_level": highest_severity_str,
+                "nudge_title": "वाइटल्स सिंक पूर्ण" if highest_severity_str == "LOW" else "स्वास्थ्य अलर्ट",
+                "nudge_text": f"{patient_name} के वाइटल्स सफलतापूर्वक अपडेट हो गए हैं और स्थिर दिख रहे हैं।" if highest_severity_str == "LOW" else f"हमने आज {patient_name} के स्वास्थ्य आंकड़ों में कुछ बदलाव देखे हैं।",
+                "why_flagged": "वाइटल्स सामान्य ऐतिहासिक सीमा के भीतर हैं।" if highest_severity_str == "LOW" else "एक या अधिक वाइटल्स (हार्ट रेट, ब्लड प्रेशर) सामान्य से भिन्न हैं।",
+                "action_steps": "वर्तमान दैनिक देखभाल योजना जारी रखें।" if highest_severity_str == "LOW" else "कृपया उनकी स्थिति जांचें और वाइटल्स पर नज़र रखें।"
+            }
+        else:
+            fallback_nudge = {
+                "risk_level": highest_severity_str,
+                "nudge_title": "Vitals Sync Completed" if highest_severity_str == "LOW" else "Health Alert Detected",
+                "nudge_text": f"Vitals for {patient_name} have been updated successfully and appear stable." if highest_severity_str == "LOW" else f"We noticed some deviations in {patient_name}'s vitals today.",
+                "why_flagged": "Vitals are within normal historical baseline ranges." if highest_severity_str == "LOW" else "One or more vitals (heart rate, blood pressure) deviated from baseline.",
+                "action_steps": "Maintain the current daily care plan." if highest_severity_str == "LOW" else "Please check in on them and monitor vitals closely."
+            }
         
     else:
         # Standard List[InsightResult] logic
@@ -102,17 +127,18 @@ async def generate_clinical_nudge(insights: Any, patient_name: str = "Ranjit", p
     
         Instructions:
         1. Determine the appropriate overall Risk Level (LOW, MEDIUM, HIGH) based on the insights provided. The highest triggered risk is {highest_severity_val}.
-        2. Write in a warm, comforting, less-clinical tone. Speak in plain English like a reassuring friend or family nurse to the caregiver, not a cold algorithm.
+        2. Write in a warm, comforting, less-clinical tone. Speak like a reassuring friend or family nurse to the caregiver, not a cold algorithm.
         3. Exclude dense medical terminology (no jargon).
         4. UNDER THE "why_flagged" SECTION, YOU MUST PROVIDE a simple, non-clinical explanation of why we are flagging this, summarizing the clinical rules that fired. DO NOT include any visual graphs.
+        5. {get_proactive_language_directive(pref_lang, content_type="nudge")}
         
         Format the response as exact JSON:
         {{
           "risk_level": "LOW | MEDIUM | HIGH",
-          "nudge_title": "Warm, human-friendly title",
-          "nudge_text": "Empathetic, comforting description in plain conversational English.",
-          "why_flagged": "Why we are flagging this (a simple, non-clinical explanation of the rules that fired)",
-          "action_steps": "What you can do about it (clear, gentle next steps)"
+          "nudge_title": "Warm, human-friendly title in {pref_lang}",
+          "nudge_text": "Empathetic, comforting description in {pref_lang}.",
+          "why_flagged": "Why we are flagging this in {pref_lang}",
+          "action_steps": "What you can do about it in {pref_lang}"
         }}
         """
         
@@ -121,13 +147,22 @@ async def generate_clinical_nudge(insights: Any, patient_name: str = "Ranjit", p
         except Exception:
             first_name = "Alert"
             
-        fallback_nudge = {
-            "risk_level": highest_severity_val,
-            "nudge_title": "Health Alert Detected",
-            "nudge_text": f"We noticed some changes in {patient_name}'s health metrics that triggered an alert.",
-            "why_flagged": f"The following insights were flagged: {first_name}",
-            "action_steps": "Please review the detailed metrics and consult a doctor if necessary."
-        }
+        if pref_lang.lower() == "hindi":
+            fallback_nudge = {
+                "risk_level": highest_severity_val,
+                "nudge_title": "स्वास्थ्य अलर्ट",
+                "nudge_text": f"हमने आज {patient_name} के स्वास्थ्य में कुछ बदलाव देखे हैं।",
+                "why_flagged": f"निम्नलिखित अलर्ट दर्ज किया गया: {first_name}",
+                "action_steps": "कृपया विस्तृत जानकारी की समीक्षा करें और आवश्यकता होने पर डॉक्टर से परामर्श लें।"
+            }
+        else:
+            fallback_nudge = {
+                "risk_level": highest_severity_val,
+                "nudge_title": "Health Alert Detected",
+                "nudge_text": f"We noticed some changes in {patient_name}'s health metrics that triggered an alert.",
+                "why_flagged": f"The following insights were flagged: {first_name}",
+                "action_steps": "Please review the detailed metrics and consult a doctor if necessary."
+            }
 
     # Use the active Gemini API key from environment if available and not placeholder
     ai_studio_key = settings.GEMINI_API_KEY if settings.GEMINI_API_KEY != "your-api-key-here" else ""

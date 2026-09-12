@@ -15,6 +15,11 @@ from typing import Dict, Any, Optional
 from app.config import settings
 from app.services.insights.engine import InsightEngine, EngineOutput
 from app.services.insights.core import RiskLevel
+from app.services.multilingual import (
+    get_patient_language,
+    get_proactive_language_directive,
+    get_fallback_text,
+)
 
 
 async def generate_daily_summary(
@@ -33,9 +38,10 @@ async def generate_daily_summary(
             "top_concern": "rule name" or null
         }
     """
-    # 1. Fetch patient context
+    # 1. Fetch patient context and language preference
     from app.services.insights.data_fetcher import fetch_patient_context
     ctx = fetch_patient_context(patient_id)
+    pref_lang = get_patient_language(patient_id)
 
     # 2. Run the engine with pre-fetched context
     engine = InsightEngine()
@@ -43,9 +49,9 @@ async def generate_daily_summary(
 
     # 3. If calibrating, return onboarding summary
     if output.calibration_message and not output.active_insights:
+        calib_msg = get_fallback_text("calibration_message", pref_lang)
         return {
-            "summary": f"We're still learning your daily patterns. "
-                       f"Keep logging your vitals daily — your personalized health summaries will be ready soon.",
+            "summary": calib_msg,
             "overall_status": "calibrating",
             "insights_count": {"high": 0, "medium": 0, "low": 0},
             "top_concern": None,
@@ -157,6 +163,7 @@ RULES:
 5. Speak directly to the user in the second person ("you", "your"). Do NOT refer to them in the third person (do not use their name or "he/she").
 6. Do NOT use medical jargon, numbers, percentages, or symbols in the final summary. Translate numbers into words (e.g. use "eight hours" instead of "8 hours" or "8 hrs", and "six thousand steps" instead of "6,000 steps").
 7. Do NOT use lists, bullet points, or headers. Just 2 flowing, natural sentences.
+8. {get_proactive_language_directive(pref_lang, content_type="briefing")}
 
 Return ONLY the 2 sentences as plain text. No JSON, no formatting."""
 
@@ -189,7 +196,7 @@ Return ONLY the 2 sentences as plain text. No JSON, no formatting."""
 
     # 9. Fallback if LLM unavailable
     if not summary_text:
-        summary_text = _build_fallback_summary(yesterday_vitals, overall, top_concern)
+        summary_text = _build_fallback_summary(yesterday_vitals, overall, top_concern, language=pref_lang)
 
     return {
         "summary": summary_text,
@@ -202,12 +209,32 @@ Return ONLY the 2 sentences as plain text. No JSON, no formatting."""
 def _build_fallback_summary(
     yesterday_vitals: Dict[str, float],
     overall: str,
-    top_concern: Optional[str] = None
+    top_concern: Optional[str] = None,
+    language: str = "English"
 ) -> str:
     """Deterministic fallback when the LLM is unavailable."""
     steps = yesterday_vitals.get("steps")
     sleep = yesterday_vitals.get("sleep_hours")
     
+    if language.lower() == "hindi":
+        if steps is not None and sleep is not None:
+            first_sent = f"कल आप {int(steps)} कदमों के साथ सक्रिय रहे और आपको {round(sleep, 1)} घंटे की अच्छी नींद मिली।"
+        elif steps is not None:
+            first_sent = f"कल आपने {int(steps)} कदम चलकर खुद को सक्रिय रखा, बहुत बढ़िया।"
+        elif sleep is not None:
+            first_sent = f"कल रात आपको लगभग {round(sleep, 1)} घंटे की आरामदायक नींद मिली।"
+        else:
+            first_sent = "कल आपके स्वास्थ्य के सभी आंकड़े स्थिर और सामान्य रहे।"
+
+        if overall == "concerning" and top_concern:
+            second_sent = f"हमने आपके {top_concern.lower()} में कुछ बदलाव देखे हैं, इसलिए आज आराम करें और डॉक्टर से परामर्श लें।"
+        elif overall == "needs_attention" and top_concern:
+            second_sent = f"आज अपनी दिनचर्या आराम से रखें और अपने {top_concern.lower()} का ध्यान रखें।"
+        else:
+            second_sent = "आज भी अपनी अच्छी दिनचर्या बनाए रखें और पर्याप्त पानी पीते रहें।"
+            
+        return f"{first_sent} {second_sent}"
+
     # 1. First sentence: recap of yesterday
     if steps is not None and sleep is not None:
         first_sent = f"Yesterday, you stayed active with {int(steps)} steps and got {round(sleep, 1)} hours of sleep."

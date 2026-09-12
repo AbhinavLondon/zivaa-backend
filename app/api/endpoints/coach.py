@@ -8,6 +8,11 @@ import os
 import httpx
 import json
 import uuid
+from app.services.multilingual import (
+    get_patient_language,
+    get_coach_language_directive,
+    get_fallback_text,
+)
 
 router = APIRouter()
 
@@ -16,6 +21,7 @@ class ChatRequest(BaseModel):
     message: str
     timezone: str = "UTC"
     session_id: Optional[str] = None
+    preferred_language: Optional[str] = None
 
 class ChatResponse(BaseModel):
     patient_id: str
@@ -57,6 +63,8 @@ Whenever the patient reports an acute symptom, unexplained physical sensation, p
 - **Stratify by Likelihood & Context:** Contrast common, benign causes (e.g., tension, mild dehydration, posture, sleep deficit, or medication timing) with conditions that require physician follow-up.
 - **Explain the Physiological Link:** Connect symptoms to their profile (e.g., blood pressure trends, hydration, known conditions, or medications) in simple, reassuring language.
 - **Provide Care Pathway Guidance:** Categorize into Self-Care, Routine Primary Care Visit, Urgent Care, or Emergency, and append the appropriate meta tag (`__META__{{"acuity": "..."}}__META__`).
+
+{language_directive}
 
 ---
 
@@ -136,7 +144,7 @@ When a user encounters a Category C (Barrier) or Category E (Discouragement) whi
    - **Active Coaching Mode (Default):** Conclude your message with **exactly ONE clear, engaging, and friendly question**. Never overwhelm an older adult with multiple questions at once.
    - **Milestone Resolution Off-Ramp:** When you and the user have agreed upon a clear next step, habit, or action plan (e.g., agreed to 10 minutes of chair exercises or drinking water before breakfast), DO NOT jump into an unprompted new health topic or ask an unnecessary new coaching question. Instead, affirm/celebrate their plan and gently ask if they are all set for now or if there is anything else they'd like help with.
    - **Graceful Sign-Off (STRICT 0 QUESTIONS):** If the user clearly signals they want to end the conversation (e.g., "bye", "good night", "got to go", "thank you that's all", "talk later", or a simple terminal acknowledgment after resolving a goal like "thanks!", "will do", "okay good"), give a warm, supportive closing blessing/sign-off. In this sign-off message, you MUST NOT ask ANY questions. End with 0 questions.
-3. **Medical Disclaimer:** Always end your conversational response with: "I am an AI coach. Please consult your physician for medical decisions."
+3. **Medical Disclaimer:** Always end your conversational response with the standard medical disclaimer in the active conversation language (e.g., in English: "I am an AI coach. Please consult your physician for medical decisions." or in Hindi: "मैं एक AI कोच हूँ। कृपया चिकित्सीय निर्णयों के लिए अपने डॉक्टर से परामर्श लें।" or appropriate translation in the active language).
 
 # Suggested Quick Replies
 At the very end of your message (before any meta tags), provide exactly 3 short, easy-to-tap suggestions the user could choose from. Format them strictly like this:
@@ -200,17 +208,21 @@ async def query_gemini_chat(system_prompt: str, chat_history: List[dict], new_me
         }
     }
     
-    async with httpx.AsyncClient() as client:
-        response = await client.post(url, json=payload, timeout=None)
-        if response.status_code == 200:
-            data = response.json()
-            try:
-                return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-            except (KeyError, IndexError):
-                return "I'm having trouble processing that right now."
-        else:
-            print(f"Gemini API Error: {response.status_code} - {response.text}")
-            return "I'm currently experiencing technical difficulties."
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=15.0)) as client:
+            response = await client.post(url, json=payload)
+            if response.status_code == 200:
+                data = response.json()
+                try:
+                    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                except (KeyError, IndexError):
+                    return "I'm having trouble processing that right now."
+            else:
+                print(f"Gemini API Error: {response.status_code} - {response.text}")
+                return "I'm currently experiencing technical difficulties."
+    except Exception as e:
+        print(f"Gemini request exception: {e}")
+        return "I'm currently having trouble connecting to my AI service. Please try again in a moment."
 
 @router.get("/chat/history/{patient_id}")
 async def get_chat_history(patient_id: str):
@@ -503,8 +515,12 @@ async def chat_with_coach(payload: ChatRequest):
         except Exception:
             supabase.table("coach_chat_logs").insert(insert_data).execute()
 
+    # 1. Resolve Preferred Language & Directive
+    preferred_language = payload.preferred_language or get_patient_language(payload.patient_id)
+    language_directive = get_coach_language_directive(preferred_language)
+
     context_str = await build_coach_context_string(payload.patient_id)
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_str)
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_str, language_directive=language_directive)
     
     # 2. Check for Emergency Keywords directly (Circuit Breaker)
     emergency_keywords = [
@@ -515,7 +531,7 @@ async def chat_with_coach(payload: ChatRequest):
     ]
     lower_msg = payload.message.lower()
     if any(keyword in lower_msg for keyword in emergency_keywords):
-        fallback_msg = "It sounds like you might be experiencing a medical emergency. Please stop using this app and immediately dial emergency services (911) or go to the nearest emergency room."
+        fallback_msg = get_fallback_text("emergency_fallback", preferred_language)
         try:
             save_log("user", payload.message)
             save_log("assistant", fallback_msg)
@@ -602,8 +618,12 @@ async def chat_with_coach_stream(payload: ChatRequest):
         except Exception:
             supabase.table("coach_chat_logs").insert(insert_data).execute()
     
+    # 1. Resolve Preferred Language & Directive
+    preferred_language = payload.preferred_language or get_patient_language(payload.patient_id)
+    language_directive = get_coach_language_directive(preferred_language)
+
     context_str = await build_coach_context_string(payload.patient_id)
-    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_str)
+    system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_str, language_directive=language_directive)
     
     # 2. Check for Emergency Keywords directly (Circuit Breaker)
     emergency_keywords = [
@@ -614,7 +634,7 @@ async def chat_with_coach_stream(payload: ChatRequest):
     ]
     lower_msg = payload.message.lower()
     if any(keyword in lower_msg for keyword in emergency_keywords):
-        fallback_msg = "It sounds like you might be experiencing a medical emergency. Please stop using this app and immediately dial emergency services (911) or go to the nearest emergency room."
+        fallback_msg = get_fallback_text("emergency_fallback", preferred_language)
         try:
             save_log("user", payload.message)
             save_log("assistant", fallback_msg)

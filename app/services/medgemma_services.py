@@ -7,6 +7,11 @@ from app.services.insights.context import EvalContext, MetricValue
 from app.services.insights.core import OVERNIGHT_METRICS, CUMULATIVE_METRICS
 from app.services.macro_calculator import calculate_daily_macros
 from app.services.loinc_dictionary import get_loinc_mapping, LOINC_DICTIONARY, get_consumer_category
+from app.services.multilingual import (
+    get_patient_language,
+    get_proactive_language_directive,
+    get_fallback_text,
+)
 
 async def _call_medgemma(prompt: str, json_mode: bool = False, prefill: bool = True, response_schema: Optional[Dict] = None, file_part: Optional[Dict] = None) -> str:
     """
@@ -684,6 +689,8 @@ async def generate_medgemma_nudge(insights: Any, patient_name: str = "Ranjit", i
     except Exception as e:
         pathways_str = "- 'level_7_wellness_maintenance': Default stable pathway."
 
+    pref_lang = get_patient_language(patient_id)
+
     prompt = f"""You are MedGemma, a world-class empathetic clinical AI assistant. Your role is to translate complex health data anomalies into clear, actionable, and comforting insights for an elderly user or their caregiver. You must never induce panic, but you must not dilute genuine health concerns.
 
 CONTEXT:
@@ -726,6 +733,8 @@ Analyze the provided health insights and generate a structured JSON response.
    - "description": Clear, non-clinical explanation of the next step.
    - "selected_pathway": You MUST select the exact key from the pathways catalog below that best fits the triage need:
 {pathways_str}
+
+6. {get_proactive_language_directive(pref_lang, content_type="nudge")}
 
 OUTPUT FORMAT:
 Return ONLY valid JSON. No markdown backticks, no conversational filler, no reasoning text.
@@ -903,6 +912,7 @@ async def generate_medgemma_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]
     patient_location = patient.get("location", "India")
     patient_temperature = patient.get("temperature")
     patient_conditions = patient.get("conditions", [])
+    pref_lang = patient.get("preferred_language") or get_patient_language(patient.get("id") or plan_context.get("patient_id"))
 
     # Format memories
     pref_lines = []
@@ -1097,6 +1107,7 @@ INSTRUCTIONS:
 7. If there are overdue labs in the OVERDUE LABS TO SCHEDULE section, you MUST include "Book a lab test" in the daily checklist.
 7. If no acute clinical alerts exist, output the PRE-PLANNED SCHEDULE exactly as it is (with any modifications for USER CHAT PREFERENCES), and add a warm, reassuring morning greeting to the summary.
 8. Format the response as exact JSON. DO NOT include any markdown wraps (no backticks), greetings, summary notes, or any "Thinking Process" / reasoning text.
+9. {get_proactive_language_directive(pref_lang, content_type="plan")}
 
 EXPECTED JSON SCHEMA:
 {schema_str}
@@ -1165,6 +1176,7 @@ INSTRUCTIONS:
 10. CRITICAL: Assign a short, canonical 1-2 word "category" to each task (e.g., 'Walking', 'Meditation', 'Breakfast', 'Relaxation') so similar tasks can be grouped analytically.
 11. CRITICAL: Provide "details" for each task. It should capture the why and how of that task in exactly one sentence that is easy to read and follow. Do not list exact macro counts for meals.
 12. Format the response as exact JSON. DO NOT include any markdown wraps (no backticks), greetings, summary notes, or any "Thinking Process" / reasoning text.
+13. {get_proactive_language_directive(pref_lang, content_type="plan")}
 
 EXPECTED JSON SCHEMA:
 {schema_str}
@@ -1190,7 +1202,7 @@ EXPECTED JSON SCHEMA:
     except Exception as e:
         print(f"MedGemma Plan generation failed: {e}")
         return {
-            "summary": "MedGemma was unable to compile a plan. Please follow standard guidance.",
+            "summary": get_fallback_text("morning_briefing", pref_lang),
             "schedule": {"morning": [], "afternoon": [], "evening": [], "night": []}
         }
 
@@ -1284,6 +1296,8 @@ async def generate_medgemma_summary(patient_id: str, patient_name: str = "your l
     else:
         memory_bullet = "No recent conversational context."
 
+    pref_lang = get_patient_language(patient_id)
+
     prompt = f"""You are MedGemma, writing a brief, encouraging morning health summary addressed directly to an elderly senior user about how their day went yesterday and how they are doing today.
 
 Here are their logged health metrics for yesterday:
@@ -1305,6 +1319,7 @@ RULES:
 4. Do NOT use medical jargon, numbers, or symbols in the summary. Translate numbers into words.
 5. Create a descriptive headline summarizing the overall briefing in not more than 10 words.
 6. Return a JSON object with 'headline' and 'summary' fields. DO NOT output any reasoning.
+7. {get_proactive_language_directive(pref_lang, content_type="briefing")}
 """
     schema = {
         "type": "OBJECT",
@@ -1320,15 +1335,17 @@ RULES:
             raw_response = raw_response.split("```json")[-1].split("```")[0].strip()
         parsed = json.loads(raw_response)
         
+        default_headline = get_fallback_text("morning_headline", pref_lang)
         return {
-            "headline": parsed.get("headline", "A bright, active day"),
+            "headline": parsed.get("headline", default_headline),
             "summary": parsed.get("summary", ""),
             "model_used": "Gemini (gemini-2.5-flash)" if getattr(settings, "FORCE_GEMINI", False) else f"MedGemma ({settings.MEDGEMMA_MODEL_NAME})"
         }
     except Exception as e:
         print(f"MedGemma Summary generation failed: {e}")
+        fallback_summary = get_fallback_text("morning_briefing", pref_lang)
         return {
-            "summary": "Hope you have a wonderful day ahead! Remember to stay active and hydrated.",
+            "summary": fallback_summary,
             "model_used": "MedGemma Fallback"
         }
 
@@ -1393,6 +1410,7 @@ async def generate_midday_checkin(
         memory_bullet = "No recent conversational context."
         
     nutrition_section = nutrition_text if nutrition_text else "No nutrition data logged yet today."
+    pref_lang = get_patient_language(patient_id)
         
     prompt = f"""You are MedGemma, writing a brief, encouraging mid-day check-in addressed directly to an elderly senior user.
 
@@ -1418,13 +1436,14 @@ RULES:
 3. Second sentence: A warm, supportive tip to carry them through the afternoon. Consider how their nutrition is tracking against their daily plan targets (e.g. suggesting an afternoon protein boost, fiber-rich snack, or hydration if lagging behind, or celebrating good balance), gently tailored to their known conditions, primary goals, or feelings/activities from recent memories.
 4. Do NOT use medical jargon, numbers, or symbols. Translate numbers into words (e.g. use "four thousand" instead of "4000").
 5. Return ONLY the 2 sentences as plain text. No JSON, no markdown.
+6. {get_proactive_language_directive(pref_lang, content_type="checkin")}
 """
     try:
         summary_text = await _call_medgemma(prompt, json_mode=False)
         return _clean_summary(summary_text)
     except Exception as e:
         print(f"Mid-day checkin generation failed: {e}")
-        return "You're doing great today! Keep up the good momentum this afternoon."
+        return get_fallback_text("midday_checkin", pref_lang)
 
 async def generate_evening_wind_down(
     patient_id: str, 
@@ -1448,6 +1467,7 @@ async def generate_evening_wind_down(
     conditions_str = ", ".join(patient_conditions) if patient_conditions else "None recorded"
     age_str = f"{patient_age} years old" if patient_age else "Unknown"
     sex_str = patient_sex.capitalize() if patient_sex else "Unknown"
+    pref_lang = get_patient_language(patient_id)
     
     if setup_prefs:
         prefs_lines = [f"- {k.replace('_', ' ').title()}: {v}" for k, v in setup_prefs.items()]
@@ -1492,13 +1512,14 @@ RULES:
 3. Second sentence: A soothing tip preparing them for a restful night of sleep, gently tailored to their known conditions, evening routine preferences (e.g. light hydration or herbal tea, reading/meditation), or feelings from recent memories.
 4. Do NOT use medical jargon, numbers, or symbols. Translate numbers into words.
 5. Return ONLY the 2 sentences as plain text. No JSON, no markdown.
+6. {get_proactive_language_directive(pref_lang, content_type="checkin")}
 """
     try:
         summary_text = await _call_medgemma(prompt, json_mode=False)
         return _clean_summary(summary_text)
     except Exception as e:
         print(f"Evening wind-down generation failed: {e}")
-        return "You've had a wonderful day. Now it's time to relax and prepare for a restful night's sleep."
+        return get_fallback_text("evening_wind_down", pref_lang)
 
 # ═══════════════════════════════════════════════════════════════════
 # 5. MEDGEMMA HEALTH PERSONA

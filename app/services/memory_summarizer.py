@@ -7,6 +7,7 @@ from datetime import datetime, timezone, timedelta
 from app.config import settings
 from app.services.insights.data_fetcher import supabase
 from app.utils.crypto import encrypt_text, decrypt_text
+from app.services.multilingual import get_clinical_normalization_directive
 
 SYSTEM_PROMPT = """You are an AI Memory Extraction engine for a senior care application.
 Your job is to read a recent conversation between a patient and their AI Health Coach and extract structured clinical memory facts.
@@ -18,6 +19,7 @@ CRITICAL CLINICAL RULES:
 4. Entity Resolution: You must check the existing active symptoms, actions, and medications before extracting a new one. If the user mentions an issue conceptually identical to an existing one, output an 'update' rather than creating a new one.
 5. User Medications ONLY: Only extract medications that the PATIENT explicitly states they are currently taking or have been prescribed. Do NOT extract medications that the AI Coach is merely suggesting, explaining, or educating the patient about.
 6. Preferences: ONLY extract preferences if the patient explicitly stated, updated, or removed a dietary or lifestyle preference in this conversation. If no preferences were discussed or changed, return an empty list: "preferences": [].
+7. """ + get_clinical_normalization_directive() + """
 
 You will be given the CURRENT known preferences, active symptoms, active actions, and active medications, along with the RECENT chat log.
 You must return a JSON object exactly matching this format:
