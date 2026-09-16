@@ -120,6 +120,17 @@ def setup_cron_jobs():
         misfire_grace_time=None
     )
     
+    # Run nightly universal lab reconciliation (Target: 11:00 PM local time)
+    from app.services.scheduler_jobs import run_nightly_lab_reconciliation
+    scheduler.add_job(
+        run_nightly_lab_reconciliation,
+        'cron',
+        minute='*/15',
+        id='nightly_lab_reconciliation',
+        replace_existing=True,
+        misfire_grace_time=None
+    )
+    
     # Run morning nudge dispatch (Target: 8:00 AM local time)
     from app.services.scheduler_jobs import run_morning_nudge_dispatch
     scheduler.add_job(

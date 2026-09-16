@@ -1,9 +1,10 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from app.services.insights.data_fetcher import supabase
-from app.services.insights.core import InsightRule, InsightResult, RiskLevel
+from app.services.insights.core import InsightRule, InsightResult, RiskLevel, InsightTier
 from app.services.insights.data_fetcher import fetch_patient_context
 from app.services.insights.rules.tier1_vitals import TIER_1_RULES
+from app.services.insights.rules.tier1_mobility import MOBILITY_RULES
 from app.services.insights.rules.tier2_sensors import TIER_2_RULES
 from app.services.insights.rules.tier2_mental_health import MENTAL_HEALTH_RULES
 from app.services.insights.rules.tier3_labs import TIER_3_RULES
@@ -27,6 +28,7 @@ class InsightEngine:
     def __init__(self):
         self.rules: List[InsightRule] = []
         self.rules.extend(TIER_1_RULES)
+        self.rules.extend(MOBILITY_RULES)
         self.rules.extend(TIER_2_RULES)
         self.rules.extend(MENTAL_HEALTH_RULES)
         self.rules.extend(TIER_3_RULES)
@@ -65,6 +67,28 @@ class InsightEngine:
                     active_insights.append(result)
                 elif result.skipped:
                     skipped_rules.append(result)
+                else:
+                    # Rule evaluated with valid data and passed (patient is clinically normal).
+                    # If this is a Tier 3 lab rule, check if an active insight exists and auto-resolve it.
+                    if getattr(rule, "tier", None) == InsightTier.TIER_3:
+                        try:
+                            res = supabase.table("active_clinical_insights") \
+                                .select("id, rule_id, status") \
+                                .eq("patient_id", patient_id) \
+                                .eq("rule_id", rule.id) \
+                                .neq("status", "resolved") \
+                                .neq("status", "resolved_stale") \
+                                .execute()
+                            if res.data:
+                                for row in res.data:
+                                    supabase.table("active_clinical_insights").update({
+                                        "status": "resolved",
+                                        "resolved": True,
+                                        "updated_at": datetime.utcnow().isoformat()
+                                    }).eq("id", row["id"]).execute()
+                                    print(f"InsightEngine: Auto-resolved passing Tier 3 rule '{rule.id}' for patient {patient_id}.")
+                        except Exception:
+                            pass
             except Exception as e:
                 print(f"Error evaluating rule {rule.id}: {e}")
                 

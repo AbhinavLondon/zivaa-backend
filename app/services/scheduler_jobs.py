@@ -500,6 +500,32 @@ async def run_batch_pattern_detection():
         except Exception as e:
             print(f"Failed to run batch pattern detection for {patient_id}: {e}")
 
+async def run_nightly_lab_reconciliation():
+    """
+    Nightly Universal Clinical Lab Reconciliation.
+    Scans all active patients to evaluate diagnostic validity windows,
+    auto-archive expired acute lab claims ('resolved_stale'), and reconcile
+    any active clinical insights against the latest lab history.
+    """
+    print("Running nightly universal lab reconciliation across patient population...")
+    try:
+        from app.services.insights.universal_reconciler import UniversalLabReconciler
+        from app.services.insights.data_fetcher import fetch_patient_context
+        res = supabase.table("patients").select("id, timezone").execute()
+        if not res.data:
+            return
+        for p in res.data:
+            if not is_target_local_hour(p.get("timezone"), 23):
+                continue
+            patient_id = p["id"]
+            try:
+                ctx = fetch_patient_context(patient_id)
+                UniversalLabReconciler.reconcile_patient_lab_insights(patient_id, ctx)
+            except Exception as pat_err:
+                print(f"Error during nightly lab reconciliation for patient {patient_id}: {pat_err}")
+    except Exception as e:
+        print(f"Failed to run nightly lab reconciliation: {e}")
+
 async def run_morning_nudge_dispatch():
     print("Running morning nudge dispatch for newly detected patterns...")
     from app.services.medgemma_services import generate_medgemma_nudge

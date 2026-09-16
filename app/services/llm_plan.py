@@ -275,6 +275,9 @@ def build_plan_context(patient_id: str, phone_location: str = None) -> Dict[str,
                 "skin_temp_delta": row.get("skin_temperature_delta"),
                 "weight": row.get("weight_kg"),
                 "mood_score": row.get("mood_score"),
+                "avg_cadence_spm": row.get("avg_cadence_spm"),
+                "active_movement_minutes": row.get("active_movement_minutes"),
+                "active_hours_count": row.get("active_hours_count"),
             }
     except Exception as e:
         print(f"Warning: Could not fetch vitals history: {e}")
@@ -770,10 +773,18 @@ def get_fallback_daily_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]:
     steps = vitals.get("steps", 0) or 0
     bp_sys = vitals.get("bp_systolic", 120) or 120
     hr = vitals.get("avg_heart_rate", 72) or 72
+    active_hours = vitals.get("active_hours_count")
+    active_mins = vitals.get("active_movement_minutes")
 
     if steps < 1000 and not (bp_sys > 150 or hr > 90):
         task = {"task": "Walk around house", "time": "4:00 PM", "completed": False, "category": "Activity", "details": "Take a short walk to keep your circulation healthy."}
         if "walk around house" not in seen_tasks:
+            schedule["afternoon"].append(task)
+
+    # If prolonged sitting detected (< 4 daytime active hours or < 20 active movement minutes)
+    if (active_hours is not None and active_hours < 4) or (active_mins is not None and active_mins < 20):
+        task = {"task": "Gentle circulation stroll", "time": "2:30 PM", "completed": False, "category": "Activity", "details": "A brief 5-minute stroll to break up prolonged sitting and keep joints supple."}
+        if "gentle circulation stroll" not in seen_tasks:
             schedule["afternoon"].append(task)
 
     if bp_sys > 140 or hr > 85:
@@ -933,6 +944,15 @@ async def generate_daily_plan(
           or (vitals or {}).get("blood_glucose"))
     bg_str = f"{bg} mg/dL" if bg else "Not recorded"
 
+    cadence = vitals_today.get("avg_cadence_spm") or (vitals or {}).get("avg_cadence_spm")
+    cadence_str = f"{round(cadence)} spm (Target: 80+ spm for brisk walking)" if cadence else "Not recorded"
+
+    active_mins = vitals_today.get("active_movement_minutes") or (vitals or {}).get("active_movement_minutes")
+    active_mins_str = f"{round(active_mins)} mins (Daily target: 30+ mins)" if active_mins else "Not recorded"
+
+    active_hours = vitals_today.get("active_hours_count") or (vitals or {}).get("active_hours_count")
+    active_hours_str = f"{int(active_hours)}/12 daytime hours active (Target: >=6/12)" if active_hours is not None else "Not recorded"
+
     # Format insights and lab alerts for the prompt
     insights_section = _build_insights_prompt_section(insights)
     lab_section = _build_lab_alerts_prompt_section(lab_alerts)
@@ -1018,6 +1038,9 @@ async def generate_daily_plan(
     - Sleep: {sleep} hours
     - Steps: {steps}
     - Blood Glucose: {bg_str}
+    - Walking Cadence: {cadence_str}
+    - Active Moving Time: {active_mins_str}
+    - Movement Regularity: {active_hours_str}
 
     ACTIVE HEALTH ALERTS (from clinical rules engine):
 {insights_section}
@@ -1157,6 +1180,9 @@ async def generate_daily_plan_legacy(
                 or features.get("blood_glucose")
                 or features.get("avg_blood_glucose")
             ),
+            "avg_cadence_spm": features.get("avg_cadence_spm"),
+            "active_movement_minutes": features.get("active_movement_minutes"),
+            "active_hours_count": features.get("active_hours_count"),
         },
         "active_insights": [],
         "lab_alerts": [],

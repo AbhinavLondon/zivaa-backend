@@ -26,19 +26,28 @@ async def get_yesterday_metrics(patient_id: str) -> Dict[str, Any]:
             "date": None,
             "steps": None,
             "sleep_hours": None,
-            "mood_score": None
+            "mood_score": None,
+            "avg_cadence_spm": None,
+            "active_movement_minutes": None,
+            "active_hours_count": None
         }
         
     target_date = max(all_dates)
     
-    # Extract steps, sleep, mood
+    # Extract steps, sleep, mood, mobility
     steps_vals = [val.value for val in vitals_dict.get("steps", []) if val.date == target_date]
     sleep_vals = [val.value for val in vitals_dict.get("sleep_hours", []) if val.date == target_date]
     mood_vals = [val.value for val in vitals_dict.get("mood_score", []) if val.date == target_date]
+    cadence_vals = [val.value for val in vitals_dict.get("avg_cadence_spm", []) if val.date == target_date]
+    movement_mins_vals = [val.value for val in vitals_dict.get("active_movement_minutes", []) if val.date == target_date]
+    active_hours_vals = [val.value for val in vitals_dict.get("active_hours_count", []) if val.date == target_date]
     
     return {
         "date": target_date.isoformat(),
         "steps": int(steps_vals[0]) if steps_vals else None,
         "sleep_hours": round(sleep_vals[0], 1) if sleep_vals else None,
-        "mood_score": int(mood_vals[0]) if mood_vals else None
+        "mood_score": int(mood_vals[0]) if mood_vals else None,
+        "avg_cadence_spm": round(cadence_vals[0], 1) if cadence_vals else None,
+        "active_movement_minutes": round(movement_mins_vals[0], 1) if movement_mins_vals else None,
+        "active_hours_count": int(active_hours_vals[0]) if active_hours_vals else None
     }

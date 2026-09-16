@@ -356,13 +356,27 @@ async def build_coach_context_string(patient_id: str) -> str:
         context_str += "- Recent Vitals (Last 7 Days):\n"
         has_vitals = False
         if ctx.vitals and ctx.vitals._vitals:
+            from app.services.insights.baseline import METRIC_THRESHOLDS
             for metric_name in ctx.vitals._vitals.keys():
                 metric = ctx.vitals.metric(metric_name)
                 if metric.has_data:
                     val = metric.rolling_average(7)
                     if val is not None:
-                        friendly_name = metric_name.replace('_', ' ').title()
-                        context_str += f"  - {friendly_name} (7d avg): {val:.1f}\n"
+                        friendly_name = METRIC_THRESHOLDS.get(metric_name, {}).get("label", metric_name.replace('_', ' ').title())
+                        unit = ""
+                        if "cadence" in metric_name:
+                            unit = " spm"
+                        elif "movement_minutes" in metric_name:
+                            unit = " mins/day"
+                        elif "hours_count" in metric_name:
+                            unit = "/12 daytime active hours"
+                        elif "steps" in metric_name:
+                            unit = " steps/day"
+                        elif "sleep_hours" in metric_name:
+                            unit = " hours/night"
+                        elif "heart_rate" in metric_name:
+                            unit = " bpm"
+                        context_str += f"  - {friendly_name} (7d avg): {val:.1f}{unit}\n"
                         has_vitals = True
         
         if not has_vitals:

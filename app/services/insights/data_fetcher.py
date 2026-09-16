@@ -107,6 +107,10 @@ def fetch_patient_context(patient_id: str) -> EvalContext:
             "sleep_latency_mins": row.get("sleep_latency_mins"),
             "waso_mins": row.get("waso_mins"),
             #"awakenings_count": row.get("awakenings_count"),
+            # Mobility & Movement Regularity Metrics
+            "avg_cadence_spm": row.get("avg_cadence_spm"),
+            "active_movement_minutes": row.get("active_movement_minutes"),
+            "active_hours_count": row.get("active_hours_count"),
         }
         
         for metric_name, value in metrics_mapping.items():

@@ -69,6 +69,11 @@ METRIC_THRESHOLDS: Dict[str, Dict[str, Any]] = {
     "psqi_item6":     {"min_days": 3, "window_days": 60, "label": "PSQI Sleep Quality"},
     # Wearable-derived sleep efficiency — daily, like other sleep metrics
     "sleep_efficiency": {"min_days": 7, "window_days": 30, "label": "Sleep Efficiency"},
+
+    # Mobility & Movement Regularity KPIs
+    "avg_cadence_spm":         {"min_days": 5, "window_days": 30, "label": "Walking Cadence"},
+    "active_movement_minutes": {"min_days": 5, "window_days": 30, "label": "Active Moving Time"},
+    "active_hours_count":      {"min_days": 5, "window_days": 30, "label": "Movement Regularity"},
 }
 
 # Default for any metric not listed above

@@ -99,7 +99,13 @@ async def generate_daily_summary(
     for metric_name, val in yesterday_vitals.items():
         label = METRIC_THRESHOLDS.get(metric_name, {}).get("label", metric_name)
         unit = ""
-        if "steps" in metric_name:
+        if "cadence" in metric_name:
+            unit = " spm"
+        elif "movement_minutes" in metric_name:
+            unit = " mins"
+        elif "hours_count" in metric_name:
+            unit = "/12 daytime active hours"
+        elif "steps" in metric_name:
             unit = " steps"
         elif "sleep_hours" in metric_name:
             unit = " hours"

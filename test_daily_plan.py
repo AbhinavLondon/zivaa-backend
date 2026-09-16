@@ -31,7 +31,10 @@ async def test_service_directly():
             "bp_diastolic": 90.0,
             "sleep_hours": 5.5,
             "steps": 850,
-            "blood_glucose": 145.0
+            "blood_glucose": 145.0,
+            "avg_cadence_spm": 65.0,
+            "active_movement_minutes": 25.0,
+            "active_hours_count": 5
         },
         "active_insights": [],
         "lab_alerts": [],
@@ -56,7 +59,10 @@ def test_api_endpoint():
             "bp_diastolic": 82.0,
             "sleep_hours": 7.5,
             "total_steps": 1200.0,
-            "glucose_mg_dl": 110.0
+            "glucose_mg_dl": 110.0,
+            "avg_cadence_spm": 68.0,
+            "active_movement_minutes": 32.0,
+            "active_hours_count": 6
         },
         "conditions": ["Type 2 Diabetes"]
     }

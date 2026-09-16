@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from app.services.insights.engine import engine
 from app.services.medgemma_services import generate_medgemma_alerts, generate_medgemma_nudge
 from app.services.insights.data_fetcher import fetch_patient_context, supabase
-from app.services.insights.core import CUMULATIVE_METRICS
+from app.services.insights.core import CUMULATIVE_METRICS, POSITIVE_ACTIVITY_METRICS
 from app.services.notification_templates import dispatch_notification, NotificationType
 from pydantic import BaseModel
 
@@ -75,6 +75,13 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
                         has_any_established_baseline = True
                         # Only calculate Z-Score if this specific vital was updated on the fresh date
                         if latest_global_date and m.data[-1].date == latest_global_date:
+                            # POSITIVE ACTIVITY GATE:
+                            # Metrics in POSITIVE_ACTIVITY_METRICS (steps, active_movement_minutes, etc.)
+                            # represent healthy physical mobility. Positive deviations (m.latest >= b.mean)
+                            # must NEVER wake MedGemma for emergency health alerts.
+                            if metric_name in POSITIVE_ACTIVITY_METRICS and m.latest >= b.mean:
+                                continue
+
                             # CUMULATIVE METRIC GATE:
                             # Cumulative metrics (steps, exercise_minutes, avg_speed, etc.) accumulate
                             # across the waking day. If evaluating the current in-progress date (today)
@@ -85,6 +92,29 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
                                     continue
                                 if evaluation_mode == "realtime" and m.latest < b.mean:
                                     continue
+
+                            # EXERTIONAL TACHYCARDIA GATE:
+                            # Daytime segmented heart rates (morning, afternoon, evening) naturally elevate during physical activity.
+                            # If the patient has significant activity today (active_movement_minutes >= 30, or steps >= baseline mean),
+                            # AND their resting/night heart rate is calm (<75 bpm or <= baseline), this is healthy sinus tachycardia of exertion.
+                            if metric_name in ("hr_avg_morning", "hr_avg_afternoon", "hr_avg_evening") and m.latest > b.mean:
+                                try:
+                                    active_mins = ctx.vitals.metric("active_movement_minutes").latest if ctx.vitals.metric("active_movement_minutes").has_data else 0.0
+                                    steps_val = ctx.vitals.metric("steps").latest if ctx.vitals.metric("steps").has_data else 0.0
+                                    steps_bl = ctx.vitals.metric("steps").established_baseline
+                                    steps_mean = steps_bl.mean if steps_bl else 4000.0
+                                    night_hr = ctx.vitals.metric("hr_avg_night").latest if ctx.vitals.metric("hr_avg_night").has_data else None
+                                    spo2_val = ctx.vitals.metric("oxygen_sat").latest if ctx.vitals.metric("oxygen_sat").has_data else 98.0
+
+                                    is_active_day = (active_mins >= 30.0 or steps_val >= steps_mean)
+                                    is_night_calm = (night_hr is not None and night_hr < 75.0)
+                                    is_oxygen_safe = (spo2_val >= 94.0)
+
+                                    if is_active_day and is_night_calm and is_oxygen_safe:
+                                        print(f"Tripwire Gatekeeper: Skipping exertional heart rate on active day ({metric_name}={m.latest:.1f}, active_mins={active_mins:.0f}, night_hr={night_hr:.1f} bpm).")
+                                        continue
+                                except Exception:
+                                    pass
 
                             z_score = abs((m.latest - b.mean) / b.std)
                             if z_score >= 1.5:
@@ -118,6 +148,25 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
         # Fetch existing active and historical insights to prevent duplication
         active_res = supabase.table("active_clinical_insights").select("*").eq("patient_id", patient_id).neq("status", "resolved").neq("status", "resolved_stale").execute()
         existing_insights = active_res.data if active_res.data else []
+
+        # --- UNIVERSAL CLINICAL LAB RECONCILIATION ---
+        # Automatically reconciles all active insights across the full 20,000+ LOINC universe,
+        # verifying whether subsequent lab reports confirm normalization, therapeutic control,
+        # or validity window expiration.
+        if existing_insights:
+            from app.services.insights.universal_reconciler import UniversalLabReconciler
+            existing_insights = UniversalLabReconciler.reconcile_patient_lab_insights(
+                patient_id=patient_id,
+                ctx=ctx,
+                existing_insights=existing_insights
+            )
+            # Annotate any chronic controlled insights so MedGemma does not treat them as acute crises
+            for ex in existing_insights:
+                if ex.get("status") == "controlled":
+                    msg = ex.get("message", "")
+                    if "[CONTROLLED ON THERAPY]" not in msg:
+                        ex["name"] = f"{ex.get('name', '')} [Controlled]"
+                        ex["message"] = f"[CHRONIC CONDITION UNDER THERAPEUTIC CONTROL; DO NOT FLAG AS ACUTE CRISIS] {msg}"
 
         # --- AUTO-RESOLUTION FOR STALE DATA ---
         stale_insights = [fi for fi in flagged_insights if getattr(fi, 'is_stale', False)]
@@ -180,13 +229,23 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
             if matching_old:
                 supabase.table("active_clinical_insights").update({"status": "resolved"}).eq("id", matching_old["id"]).execute()
         
-        # Filter out suppressed alerts (Defense-in-Depth against single-day activity drops)
+        # Filter out suppressed alerts (Defense-in-Depth against single-day activity drops, high activity pathologization, and exertional HR)
         valid_medgemma_alerts = []
         for alert in medgemma_alerts:
             rule_id = alert.get("rule_id", "unknown")
             is_historical = alert.get("is_historical", False)
             rule_lower = rule_id.lower()
             name_lower = alert.get("name", "").lower()
+
+            # Defense against pathologizing high activity
+            is_high_activity_alert = any(k in rule_lower or k in name_lower for k in [
+                "high_activity", "unusually_high", "excessive_step", "step_spike", "activity_spike"
+            ])
+            if is_high_activity_alert:
+                print(f"Tripwire: Programmatically suppressed invalid alert pathologizing high activity: {rule_id}")
+                continue
+
+            # Defense against invalid single-day step declines
             is_step_decline_alert = any(k in rule_lower or k in name_lower for k in [
                 "decrease_steps", "decrease_step", "steps_decrease", "step_drop", 
                 "low_steps", "step_count_drop", "activity_drop", "decrease in daily steps"
@@ -195,6 +254,26 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
                 if latest_global_date == today_local or "single_day" in rule_lower:
                     print(f"Tripwire: Programmatically suppressed invalid single-day/in-progress step decline alert: {rule_id}")
                     continue
+
+            # Defense against exertional heart rate on active days
+            is_exertional_hr_alert = any(k in rule_lower or k in name_lower for k in [
+                "evening_heart_rate", "afternoon_heart_rate", "morning_heart_rate", "heart_rate_spike"
+            ])
+            if is_exertional_hr_alert:
+                try:
+                    active_mins = ctx.vitals.metric("active_movement_minutes").latest if ctx.vitals.metric("active_movement_minutes").has_data else 0.0
+                    steps_val = ctx.vitals.metric("steps").latest if ctx.vitals.metric("steps").has_data else 0.0
+                    steps_bl = ctx.vitals.metric("steps").established_baseline
+                    steps_mean = steps_bl.mean if steps_bl else 4000.0
+                    night_hr = ctx.vitals.metric("hr_avg_night").latest if ctx.vitals.metric("hr_avg_night").has_data else None
+                    spo2_val = ctx.vitals.metric("oxygen_sat").latest if ctx.vitals.metric("oxygen_sat").has_data else 98.0
+
+                    if (active_mins >= 30.0 or steps_val >= steps_mean) and (night_hr is not None and night_hr < 75.0) and (spo2_val >= 94.0):
+                        print(f"Tripwire: Programmatically suppressed exertional heart rate alert on active day: {rule_id}")
+                        continue
+                except Exception:
+                    pass
+
             valid_medgemma_alerts.append(alert)
         medgemma_alerts = valid_medgemma_alerts
 

@@ -285,6 +285,15 @@ def process_fhir_bundle_internal(patient_id: str, bundle: dict, effective_date_o
         if obs_inserts:
             supabase.table("fhir_observations").insert(obs_inserts).execute()
             
+            # Real-Time Universal Clinical Lab Reconciliation
+            # Immediately evaluate whether the newly uploaded lab results normalize or control
+            # any currently open active clinical insights for this patient.
+            try:
+                from app.services.insights.universal_reconciler import UniversalLabReconciler
+                UniversalLabReconciler.reconcile_on_new_observations(patient_id, obs_inserts)
+            except Exception as rec_err:
+                print(f"Warning: Real-time lab reconciliation on upload failed: {rec_err}")
+            
         if is_draft:
             try:
                 nudge_record = {

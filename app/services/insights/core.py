@@ -17,7 +17,13 @@ OVERNIGHT_METRICS: Set[str] = {
 }
 
 CUMULATIVE_METRICS: Set[str] = {
-    "steps", "avg_heart_rate", "exercise_minutes", "avg_speed", "heart_rate_recovery"
+    "steps", "avg_heart_rate", "exercise_minutes", "avg_speed", "heart_rate_recovery",
+    "avg_cadence_spm", "active_movement_minutes", "active_hours_count"
+}
+
+# Positive physical activity metrics where higher values represent healthy mobility
+POSITIVE_ACTIVITY_METRICS: Set[str] = {
+    "steps", "exercise_minutes", "active_movement_minutes", "active_hours_count", "avg_cadence_spm"
 }
 
 class RiskLevel(str, Enum):
@@ -38,6 +44,7 @@ class InsightCategory(str, Enum):
     IMMUNE = "IMMUNE"
     SLEEP = "SLEEP"
     NEUROLOGICAL = "NEUROLOGICAL"
+    MOBILITY = "MOBILITY"
 
 class InsightTier(str, Enum):
     TIER_1 = "TIER_1"

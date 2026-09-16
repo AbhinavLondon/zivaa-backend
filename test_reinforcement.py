@@ -16,10 +16,10 @@ async def test_engine():
         print("Could not find any patients in the database.")
         return
         
-    # Find Ranjit
-    ranjit = next((p for p in res.data if "Ranjit" in p.get("full_name", "")), None)
+    # Find patient
+    ranjit = next((p for p in res.data if "Ranjit" in p.get("full_name", "")), res.data[0] if res.data else None)
     if not ranjit:
-        print("Could not find Ranjit in the database.")
+        print("Could not find any patient in the database.")
         return
         
     patient_id = ranjit["id"]

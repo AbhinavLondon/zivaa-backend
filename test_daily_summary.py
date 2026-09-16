@@ -7,7 +7,7 @@ load_dotenv()
 from app.services.daily_summary import generate_daily_summary
 
 async def main():
-    pid = "33333333-3333-3333-3333-333333333333"
+    pid = "0c445588-b36c-478f-9be3-2addfc77dc1c"
     
     print("=" * 60)
     print("DAILY SUMMARY TEST")

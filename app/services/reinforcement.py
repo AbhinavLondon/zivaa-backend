@@ -103,7 +103,8 @@ def is_statistically_significant(task_vals: List[float], base_vals: List[float],
 HIGHER_IS_BETTER = {
     "sleep_hours", "mood_score", "total_steps", "distance_meters", 
     "active_calories", "oxygen_sat_avg", "oxygen_sat_min", "avg_speed",
-    "sleep_stage_3_hours", "sleep_stage_4_hours"
+    "sleep_stage_3_hours", "sleep_stage_4_hours",
+    "avg_cadence_spm", "active_movement_minutes", "active_hours_count"
 }
 
 LOWER_IS_BETTER = {

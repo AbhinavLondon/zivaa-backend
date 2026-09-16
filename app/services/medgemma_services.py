@@ -4,7 +4,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, date, timedelta
 from app.config import settings
 from app.services.insights.context import EvalContext, MetricValue
-from app.services.insights.core import OVERNIGHT_METRICS, CUMULATIVE_METRICS
+from app.services.insights.core import OVERNIGHT_METRICS, CUMULATIVE_METRICS, POSITIVE_ACTIVITY_METRICS
 from app.services.macro_calculator import calculate_daily_macros
 from app.services.loinc_dictionary import get_loinc_mapping, LOINC_DICTIONARY, get_consumer_category
 from app.services.multilingual import (
@@ -378,12 +378,18 @@ def format_patient_chart_prompt(ctx: EvalContext, include_labs: bool = True, act
                 # Math Injection: Calculate Z-Score if baseline exists
                 if b and b.std > 0:
                     z_score = (v.value - b.mean) / b.std
-                    if abs(z_score) >= 2.0:
-                        direction = "SPIKE" if z_score > 0 else "DROP"
-                        val_str += f" [CRITICAL {direction}: {z_score:+.1f} standard deviations from normal!]"
-                    elif abs(z_score) >= 1.5:
-                        direction = "Elevated" if z_score > 0 else "Decreased"
-                        val_str += f" [Warning {direction}: {z_score:+.1f} std devs]"
+                    if name in POSITIVE_ACTIVITY_METRICS:
+                        if z_score >= 1.5:
+                            val_str += f" [High Activity / Healthy Longevity Achievement: {z_score:+.1f} std devs above baseline]"
+                        elif z_score <= -2.0:
+                            val_str += f" [Activity Decline Warning: {z_score:+.1f} std devs]"
+                    else:
+                        if abs(z_score) >= 2.0:
+                            direction = "SPIKE" if z_score > 0 else "DROP"
+                            val_str += f" [CRITICAL {direction}: {z_score:+.1f} standard deviations from normal!]"
+                        elif abs(z_score) >= 1.5:
+                            direction = "Elevated" if z_score > 0 else "Decreased"
+                            val_str += f" [Warning {direction}: {z_score:+.1f} std devs]"
                         
                 formatted_vals.append(val_str)
                 
@@ -496,6 +502,8 @@ Please reconcile these existing issues with the new data:
         focus_prompt += f"\n- CUMULATIVE METRICS GUARD: If {trigger_date} is today or in progress, cumulative metrics ({', '.join(sorted(CUMULATIVE_METRICS))}) are incomplete and still accumulating. NEVER treat a low count of steps, calories, or exercise minutes today as a drop, decline, or deficiency."
 
     focus_prompt += "\n- CLINICAL GUIDELINE: Do not diagnose functional decline, elevated fall risk, or activity decrease based on a single day of low step count. Normal daily variation (charging device, weather, rest day) accounts for single-day fluctuations. Require a sustained drop or immobility over at least 3 consecutive completed days (e.g., Tudor-Locke 2011)."
+    focus_prompt += "\n- POSITIVE ACTIVITY PRINCIPLE: High step counts, brisk cadence, and high active movement minutes are vital indicators of healthy mobility, cardiovascular reserve, and longevity in older adults (WHO 2020 Guidelines). NEVER flag or diagnose high physical activity as a medical pathology, risk flag, or 'unusually high activity level'."
+    focus_prompt += "\n- PHYSIOLOGICAL EXERTION PRINCIPLE: During daytime hours of active movement (steps above baseline, active minutes >= 30, cadence >= 80), heart rate naturally and appropriately increases to supply working muscles (sinus tachycardia of exertion). NEVER interpret daytime elevated heart rate as an emergency cardiac spike or heart failure if the patient's night/sleep heart rate is normal (<75 bpm) and oxygen saturation is normal (SpO2 >= 95%)."
     
     prompt = f"""You are MedGemma, an advanced clinical reasoning AI model.
 Review the following patient clinical chart:
@@ -713,6 +721,9 @@ Analyze the provided health insights and generate a structured JSON response.
    - Goal: Synthesize the data into a holistic clinical assessment. Bring all the details together.
    - Tone: Warm, reassuring, and extremely simple (8th-grade reading level). No dense medical jargon. {digest_instruction}
    - Clinical Boundary: Clearly explain *why* the data is flagged as a concern. You must NOT make a formal medical diagnosis (e.g., DO NOT say "You have Hypertension"). However, you CAN provide a clinical assessment of what these patterns potentially indicate or lead to (e.g., "These signs can be closely linked with hypertension or sleep apnea").
+   - Temporal Accuracy: All daily vitals provided reflect TODAY's telemetry. ALWAYS refer to them as "today" (NEVER "yesterday").
+   - Exertional Heart Rate: Do NOT panic the user or advise urgent care if heart rate elevation occurred during an active day of walking. Walking and exercise naturally raise heart rate in healthy ways.
+   - Chronic vs Acute Separation: NEVER combine non-acute historical lab findings with acute daytime exertion to falsely claim a multi-organ emergency.
 
 4. WHY FLAGGED ("why_flagged"):
    Structure a detailed breakdown of the correlated vitals.
@@ -978,6 +989,14 @@ async def generate_medgemma_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]
                 metrics.append(f"{human_key} {val}h")
             elif key == "mood_score":
                 metrics.append(f"{human_key} {val}/10")
+            elif key == "avg_cadence_spm":
+                metrics.append(f"Walking Cadence {round(val)} spm")
+            elif key == "active_movement_minutes":
+                metrics.append(f"Active Movement {round(val)}m")
+            elif key == "active_hours_count":
+                metrics.append(f"Active Daytime Hours {int(val)}/12h")
+            elif key == "total_steps":
+                metrics.append(f"Steps {int(val)}")
             else:
                 metrics.append(f"{human_key} {val}")
                 
@@ -1258,7 +1277,20 @@ async def generate_medgemma_summary(patient_id: str, patient_name: str = "your l
                     selected_val = yesterday_reading.value
 
             if selected_val is not None:
-                yesterday_vitals.append(f"- {name}: {selected_val}")
+                from app.services.insights.baseline import METRIC_THRESHOLDS
+                label = METRIC_THRESHOLDS.get(name, {}).get("label", name.replace("_", " ").title())
+                if name == "avg_cadence_spm":
+                    yesterday_vitals.append(f"- {label}: {round(selected_val)} spm")
+                elif name == "active_movement_minutes":
+                    yesterday_vitals.append(f"- {label}: {round(selected_val)} mins")
+                elif name == "active_hours_count":
+                    yesterday_vitals.append(f"- {label}: {int(selected_val)}/12 daytime active hours")
+                elif name == "steps":
+                    yesterday_vitals.append(f"- {label}: {int(selected_val)} steps")
+                elif "sleep_hours" in name:
+                    yesterday_vitals.append(f"- {label}: {selected_val:.1f} hours")
+                else:
+                    yesterday_vitals.append(f"- {label}: {selected_val}")
                 
     vitals_bullet = "\n".join(yesterday_vitals) if yesterday_vitals else "No vital logs recorded yesterday."
     

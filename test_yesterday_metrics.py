@@ -17,12 +17,12 @@ async def test_metrics(pid: str, name: str):
     print(f"Steps: {result['steps']}")
     print(f"Sleep Hours: {result['sleep_hours']}")
     print(f"Mood Score: {result['mood_score']}")
+    print(f"Walking Cadence: {result.get('avg_cadence_spm')} spm")
+    print(f"Active Movement: {result.get('active_movement_minutes')} mins")
+    print(f"Active Daytime Hours: {result.get('active_hours_count')}/12")
     print()
 
 async def main():
-    # Neha (ID: 22222222-2222-2222-2222-222222222222)
-    await test_metrics("22222222-2222-2222-2222-222222222222", "Neha")
-    # Shashank (ID: 33333333-3333-3333-3333-333333333333)
-    await test_metrics("33333333-3333-3333-3333-333333333333", "Shashank")
+    await test_metrics("0c445588-b36c-478f-9be3-2addfc77dc1c", "Active Patient")
 
 asyncio.run(main())
