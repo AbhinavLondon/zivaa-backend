@@ -41,7 +41,7 @@ You must return a JSON object exactly matching this format:
     {"id": "uuid", "status": "Resolved", "severity": "Mild", "progression_note": "Pain is completely gone now"}
   ],
   "new_actions": [
-    {"symptom_id": "uuid (optional, if linked to a symptom)", "description": "Ice the lower back", "status": "Suggested"}
+    {"symptom_id": "uuid (optional, if linked to a symptom)", "description": "Ice the lower back", "status": "Suggested", "action_type": "symptom_relief", "cadence": "daily", "ui_action_type": "CHECKBOX_ONLY", "target_body_part": "Lower Back"}
   ],
   "updated_actions": [
     {"id": "uuid", "status": "Abandoned"}
@@ -49,7 +49,11 @@ You must return a JSON object exactly matching this format:
 }
 
 - For updated items, you MUST include the existing 'id'.
-- Action statuses can be: Suggested, Agreed, Completed, Abandoned.
+- Action statuses can be: Suggested, Agreed, Completed, Abandoned, Paused.
+- Action types can be: symptom_relief, one_off (errand/milestone), habit (lifestyle routine), periodic (e.g. weekly check).
+- Cadence can be: daily, weekly_sunday, weekly_monday, etc., or once (for one-off errands).
+- ui_action_type can be: FOLLOW_EXERCISE (for stretching, mobility, guided routines), LOG_VITALS (for BP, blood sugar, weight checks), LOG_MEAL (for food photo/diet logging), COACH_CHAT (for checking in with Coach Zivaa), CHECKBOX_ONLY (for errands, hydration, general tasks).
+- target_body_part (optional, for exercise/symptom actions): Knees / Legs, Lower Back, Shoulders / Neck, Wrists / Hands, Ankles / Feet, Hip, Core, Full Body / Balance.
 - Symptom statuses can be: Active, Resolving, Resolved, Chronic.
 - Symptom severities can be: Mild, Moderate, Severe.
 - Medication statuses can be: Active, Discontinued.
@@ -253,14 +257,43 @@ async def extract_memory_from_chats(patient_id: str):
             action_desc = na.get("description")
             if not action_desc:
                 continue
+            act_type = na.get("action_type")
+            if not act_type:
+                act_type = "symptom_relief" if na.get("symptom_id") else "habit"
             payload = {
                 "patient_id": patient_id,
                 "description": action_desc,
-                "status": na.get("status", "Suggested")
+                "status": na.get("status", "Suggested"),
+                "action_type": act_type,
+                "cadence": na.get("cadence", "daily" if act_type == "habit" else ("once" if act_type == "one_off" else "daily"))
             }
             if na.get("symptom_id"):
                 payload["symptom_id"] = na.get("symptom_id")
-            supabase.table("care_plan_actions").insert(payload).execute()
+            if na.get("target_body_part"):
+                payload["target_body_part"] = na.get("target_body_part")
+            
+            ui_action_type = na.get("ui_action_type")
+            if ui_action_type:
+                payload["action_metadata"] = {
+                    "ui_action_type": ui_action_type,
+                    "target_body_part": na.get("target_body_part")
+                }
+
+            try:
+                supabase.table("care_plan_actions").insert(payload).execute()
+            except Exception as insert_err:
+                # Graceful fallback if target_body_part/action_metadata columns are not yet present
+                payload.pop("target_body_part", None)
+                payload.pop("action_metadata", None)
+                try:
+                    supabase.table("care_plan_actions").insert(payload).execute()
+                except Exception:
+                    payload.pop("action_type", None)
+                    payload.pop("cadence", None)
+                    try:
+                        supabase.table("care_plan_actions").insert(payload).execute()
+                    except Exception as inner_err:
+                        print(f"Failed to insert care_plan_action: {inner_err}")
             
         for ua in parsed.get("updated_actions", []):
             if not ua.get("id"):

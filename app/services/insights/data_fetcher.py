@@ -341,8 +341,11 @@ def fetch_patient_context(patient_id: str) -> EvalContext:
     except Exception as e:
         print(f"Warning: Could not fetch care models for {patient_id}: {e}")
         
+    vitals_ctx._patient_timezone = patient_timezone
+
     # 8. Return combined Context (with baseline status + demographics + insights + device state + setup_prefs)
     return EvalContext(
+
         patient_id=patient_id,
         vitals=vitals_ctx,
         labs=labs_ctx,

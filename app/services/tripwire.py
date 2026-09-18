@@ -181,6 +181,59 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
             # Remove stale from flagged_insights so MedGemma doesn't re-trigger it
             flagged_insights = [fi for fi in flagged_insights if not getattr(fi, 'is_stale', False)]
 
+        # PRE-LLM FILTER: Defense-in-Depth against single-day activity drops, high activity pathologization, and exertional HR
+        valid_flagged = []
+        try:
+            patient_tz = zoneinfo.ZoneInfo(ctx.patient_timezone) if getattr(ctx, 'patient_timezone', None) else timezone.utc
+        except Exception:
+            patient_tz = timezone.utc
+        today_local_pre = datetime.now(patient_tz).date()
+
+        for insight in flagged_insights:
+            rule_id = insight.rule_id
+            rule_lower = rule_id.lower()
+            name_lower = insight.name.lower()
+
+            # 1. Defense against pathologizing high activity
+            is_high_activity_alert = any(k in rule_lower or k in name_lower for k in [
+                "high_activity", "unusually_high", "excessive_step", "step_spike", "activity_spike"
+            ])
+            if is_high_activity_alert:
+                print(f"Tripwire: Pre-suppressed invalid alert pathologizing high activity: {rule_id}")
+                continue
+
+            # 2. Defense against invalid single-day step declines
+            is_step_decline_alert = any(k in rule_lower or k in name_lower for k in [
+                "decrease_steps", "decrease_step", "steps_decrease", "step_drop", 
+                "low_steps", "step_count_drop", "activity_drop", "decrease in daily steps"
+            ])
+            if is_step_decline_alert:
+                if latest_global_date == today_local_pre or "single_day" in rule_lower:
+                    print(f"Tripwire: Pre-suppressed invalid single-day/in-progress step decline alert: {rule_id}")
+                    continue
+
+            # 3. Defense against exertional heart rate on active days
+            is_exertional_hr_alert = any(k in rule_lower or k in name_lower for k in [
+                "evening_heart_rate", "afternoon_heart_rate", "morning_heart_rate", "heart_rate_spike", "daytime_heart_rate"
+            ])
+            if is_exertional_hr_alert:
+                try:
+                    active_mins = ctx.vitals.metric("active_movement_minutes").latest if ctx.vitals.metric("active_movement_minutes").has_data else 0.0
+                    steps_val = ctx.vitals.metric("steps").latest if ctx.vitals.metric("steps").has_data else 0.0
+                    steps_bl = ctx.vitals.metric("steps").established_baseline
+                    steps_mean = steps_bl.mean if steps_bl else 4000.0
+                    night_hr = ctx.vitals.metric("hr_avg_night").latest if ctx.vitals.metric("hr_avg_night").has_data else None
+                    spo2_val = ctx.vitals.metric("oxygen_sat").latest if ctx.vitals.metric("oxygen_sat").has_data else 98.0
+
+                    if (active_mins >= 30.0 or steps_val >= steps_mean) and (night_hr is not None and night_hr < 75.0) and (spo2_val >= 94.0):
+                        print(f"Tripwire: Pre-suppressed exertional heart rate alert on active day: {rule_id}")
+                        continue
+                except Exception:
+                    pass
+
+            valid_flagged.append(insight)
+        flagged_insights = valid_flagged
+
         # LLM Cooldown Check
         if existing_insights and not flagged_insights:
             latest_update = None
@@ -256,9 +309,11 @@ async def run_tripwire_evaluation(patient_id: str, trigger_type: str = "vitals",
                     continue
 
             # Defense against exertional heart rate on active days
-            is_exertional_hr_alert = any(k in rule_lower or k in name_lower for k in [
-                "evening_heart_rate", "afternoon_heart_rate", "morning_heart_rate", "heart_rate_spike"
-            ])
+            # Broadened to catch LLM hallucinations, but explicitly exclude resting/night
+            is_hr = any(k in rule_lower or k in name_lower for k in ["heart_rate", "hr_avg", "tachycardia", "elevated_hr"])
+            is_resting = any(k in rule_lower or k in name_lower for k in ["resting", "night", "sleep"])
+            is_exertional_hr_alert = is_hr and not is_resting
+            
             if is_exertional_hr_alert:
                 try:
                     active_mins = ctx.vitals.metric("active_movement_minutes").latest if ctx.vitals.metric("active_movement_minutes").has_data else 0.0

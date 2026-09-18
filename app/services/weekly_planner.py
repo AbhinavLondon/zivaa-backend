@@ -9,19 +9,8 @@ from app.services.insights.data_fetcher import supabase
 from app.services.medgemma_services import _call_medgemma, _clean_json
 from app.services.macro_calculator import calculate_daily_macros
 
-# Pydantic Schemas for 7-Day Plan
-class TaskItem(BaseModel):
-    task: str = Field(..., description="A specific and descriptive task action, not more than 1 short sentence.")
-    time: str = Field(..., description="Time of the task, e.g., '7:30 AM'")
-    completed: bool = Field(default=False)
-    category: str = Field(..., description="Canonical 1-2 word category, e.g. 'Walking', 'Breakfast'")
-    details: str = Field(..., description="One sentence explaining the why/how. Must include macro breakdown for meals.")
-
-class DailySchedule(BaseModel):
-    morning: List[TaskItem]
-    afternoon: List[TaskItem]
-    evening: List[TaskItem]
-    night: List[TaskItem]
+# Pydantic Schemas for 7-Day Plan (unified with Daily Plan schema)
+from app.services.plan_schema import TaskItem, DailySchedule
 
 class DayPlan(BaseModel):
     day_of_week: str = Field(..., description="Day of the week (e.g. 'Monday')")

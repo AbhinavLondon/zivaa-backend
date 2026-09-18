@@ -123,8 +123,9 @@ class DepressionWithdrawalRule(InsightRule):
 
             if steps.has_data and steps.is_baseline_established:
                 steps_bl = steps.established_baseline
-                steps_z = ((steps_bl.mean - steps.latest) / steps_bl.std) if steps_bl.std > 0 else 0
+                steps_z = ((steps_bl.mean - steps.latest_completed) / steps_bl.std) if steps_bl.std > 0 else 0
                 steps_crashed = steps_z > 2.0
+
 
             if sleep.has_data and sleep.is_baseline_established:
                 sleep_baseline = sleep.established_baseline.mean
@@ -188,8 +189,9 @@ class DepressionWithdrawalRule(InsightRule):
 
         if steps.has_data and steps.is_baseline_established:
             steps_bl = steps.established_baseline
-            steps_z = ((steps_bl.mean - steps.latest) / steps_bl.std) if steps_bl.std > 0 else 0
+            steps_z = ((steps_bl.mean - steps.latest_completed) / steps_bl.std) if steps_bl.std > 0 else 0
             steps_crashed = steps_z > 2.0
+
 
         if sleep.has_data and sleep.is_baseline_established:
             sleep_baseline = sleep.established_baseline.mean

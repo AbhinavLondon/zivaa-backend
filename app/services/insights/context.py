@@ -1,6 +1,8 @@
 import statistics
 from typing import List, Dict, Any, Optional, TYPE_CHECKING, Union
 from datetime import datetime, date, timedelta
+from app.services.insights.core import CUMULATIVE_METRICS
+
 
 if TYPE_CHECKING:
     from app.services.insights.baseline import BaselineInfo, PatientBaselineStatus
@@ -29,25 +31,45 @@ class TrendResult:
         return ((self.end_value - self.start_value) / self.start_value) * 100
 
 class VitalsMetric:
-    def __init__(self, name: str, data: List[MetricValue], baseline_info: Optional['BaselineInfo'] = None, validity_window_days: int = 7):
+    def __init__(self, name: str, data: List[MetricValue], baseline_info: Optional['BaselineInfo'] = None, validity_window_days: int = 7, patient_timezone: Optional[str] = None):
         self.name = name
         # Sort data by date ascending
         self.data = sorted(data, key=lambda x: x.date)
         # Persisted baseline (from patient_baselines table)
         self._baseline_info = baseline_info
         self.validity_window_days = validity_window_days
+        self._patient_timezone = patient_timezone
+
+    def _get_today_local(self) -> date:
+        if self._patient_timezone:
+            try:
+                import zoneinfo
+                return datetime.now(zoneinfo.ZoneInfo(self._patient_timezone)).date()
+            except Exception:
+                pass
+        return datetime.now().date()
 
     @property
     def has_data(self) -> bool:
         """Returns True if at least one reading exists for this metric."""
         return len(self.data) > 0
 
-    def has_sufficient_history(self, days: int = 7) -> bool:
+    def has_sufficient_history(self, days: int = 7, completed_only: Optional[bool] = None) -> bool:
         """Returns True if we have at least 2 readings within the given window."""
         if len(self.data) < 2:
             return False
-        cutoff = datetime.now().date() - timedelta(days=days)
-        recent = [d for d in self.data if d.date >= cutoff]
+            
+        today_local = self._get_today_local()
+        cutoff = today_local - timedelta(days=days)
+        
+        if completed_only is None:
+            completed_only = self.name in CUMULATIVE_METRICS
+            
+        if completed_only:
+            recent = [d for d in self.data if cutoff <= d.date < today_local]
+        else:
+            recent = [d for d in self.data if d.date >= cutoff]
+            
         return len(recent) >= 2
 
     @property
@@ -61,7 +83,35 @@ class VitalsMetric:
         if not self.data:
             return ""
         return self.data[-1].date.isoformat()
-        
+
+    @property
+    def latest_completed(self) -> float:
+        """
+        Returns the latest reading from a completed calendar day (date < today_local).
+        Falls back to self.latest if no prior completed day is available.
+        """
+        if not self.data:
+            return 0.0
+        today_local = self._get_today_local()
+        completed = [d for d in self.data if d.date < today_local]
+        if completed:
+            return completed[-1].value
+        return self.latest
+
+    @property
+    def latest_completed_date(self) -> str:
+        """
+        Returns the date (YYYY-MM-DD) of the latest completed calendar day.
+        Falls back to self.latest_date if no prior completed day is available.
+        """
+        if not self.data:
+            return ""
+        today_local = self._get_today_local()
+        completed = [d for d in self.data if d.date < today_local]
+        if completed:
+            return completed[-1].date.isoformat()
+        return self.latest_date
+
     @property
     def is_stale(self) -> bool:
         """Returns True if the most recent reading is older than its validity window."""
@@ -90,40 +140,71 @@ class VitalsMetric:
         # Fallback: compute on the fly (backward compatibility)
         if not self.data:
             return 0.0
-        cutoff = datetime.now().date() - timedelta(days=days)
-        recent = [d.value for d in self.data if d.date >= cutoff]
+        today_local = self._get_today_local()
+        cutoff = today_local - timedelta(days=days)
+        if self.name in CUMULATIVE_METRICS:
+            recent = [d.value for d in self.data if cutoff <= d.date < today_local]
+        else:
+            recent = [d.value for d in self.data if d.date >= cutoff]
         if not recent:
             recent = [d.value for d in self.data]
         return statistics.mean(recent) if recent else 0.0
 
-    def rolling_average(self, days: int = 3) -> Optional[float]:
+    def rolling_average(self, days: int = 3, completed_only: Optional[bool] = None) -> Optional[float]:
         """Computes a short-term moving average over the specified recent window."""
         if not self.data:
             return None
-        cutoff = datetime.now().date() - timedelta(days=days)
-        recent = [d.value for d in self.data if d.date > cutoff]
+            
+        today_local = self._get_today_local()
+        cutoff = today_local - timedelta(days=days)
+        
+        if completed_only is None:
+            completed_only = self.name in CUMULATIVE_METRICS
+            
+        if completed_only:
+            recent = [d.value for d in self.data if cutoff < d.date < today_local]
+        else:
+            recent = [d.value for d in self.data if d.date > cutoff]
+            
         if not recent:
             return None
         return statistics.mean(recent)
         
-    def trend(self, days: int = 7) -> TrendResult:
+    def trend(self, days: int = 7, completed_only: Optional[bool] = None) -> TrendResult:
         if len(self.data) < 2:
             return TrendResult(0.0, 0.0, days)
-        cutoff = datetime.now().date() - timedelta(days=days)
-        recent = [d for d in self.data if d.date >= cutoff]
+            
+        today_local = self._get_today_local()
+        cutoff = today_local - timedelta(days=days)
+        
+        if completed_only is None:
+            completed_only = self.name in CUMULATIVE_METRICS
+            
+        if completed_only:
+            recent = [d for d in self.data if cutoff <= d.date < today_local]
+        else:
+            recent = [d for d in self.data if d.date >= cutoff]
+            
         if len(recent) < 2:
-            # Fall back to first and last available if not enough recent data
+            eligible = [d for d in self.data if d.date < today_local] if completed_only else self.data
+            if len(eligible) >= 2:
+                return TrendResult(eligible[0].value, eligible[-1].value, days)
+            elif eligible:
+                return TrendResult(eligible[0].value, eligible[0].value, days)
             return TrendResult(self.data[0].value, self.data[-1].value, days)
+            
         return TrendResult(recent[0].value, recent[-1].value, days)
 
 class VitalsContext:
-    def __init__(self, vitals_dict: Dict[str, List[MetricValue]], baselines: Optional[Dict[str, 'BaselineInfo']] = None):
+    def __init__(self, vitals_dict: Dict[str, List[MetricValue]], baselines: Optional[Dict[str, 'BaselineInfo']] = None, patient_timezone: Optional[str] = None):
         self._vitals = vitals_dict
         self._baselines = baselines or {}
+        self._patient_timezone = patient_timezone
         
     def metric(self, name: str) -> VitalsMetric:
         baseline_info = self._baselines.get(name)
-        return VitalsMetric(name, self._vitals.get(name, []), baseline_info=baseline_info)
+        return VitalsMetric(name, self._vitals.get(name, []), baseline_info=baseline_info, patient_timezone=self._patient_timezone)
+
 
 class LabMetric:
     """

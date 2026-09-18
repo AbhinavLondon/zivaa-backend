@@ -430,6 +430,73 @@ async def update_task_status(payload: UpdateTaskRequest):
     
     return {"status": "success", "message": "Task status updated."}
 
+class DismissActionPayload(BaseModel):
+    patient_id: str
+    action_id: Optional[str] = None
+    task_title: Optional[str] = None
+    category: Optional[str] = None
+    reason: str = "not_relevant"  # "not_relevant", "dislike", "already_routine"
+
+@router.post("/daily-plan/action/dismiss")
+async def dismiss_daily_action(payload: DismissActionPayload):
+    """
+    Dismisses a task from today's plan and records negative preferences
+    if rejected, so Gemini and the planner never recommend it again.
+    """
+    try:
+        from app.services.insights.data_fetcher import supabase
+        
+        # 1. Update active daily plan to mark task as dismissed
+        res = supabase.table("daily_plans").select("id, schedule").eq("patient_id", payload.patient_id).order("created_at", desc=True).limit(1).execute()
+        if res.data:
+            plan = res.data[0]
+            schedule = plan.get("schedule", {})
+            updated = False
+            for period in ["morning", "afternoon", "evening", "night"]:
+                if isinstance(schedule.get(period), list):
+                    for task in schedule[period]:
+                        if (payload.action_id and task.get("id") == payload.action_id) or \
+                           (payload.task_title and task.get("task", "").lower() == payload.task_title.lower()):
+                            task["status"] = "dismissed"
+                            updated = True
+                            break
+            if updated:
+                supabase.table("daily_plans").update({"schedule": schedule}).eq("id", plan["id"]).execute()
+
+        # 2. If rejected/disliked, persist negative constraint into patient_preferences
+        if payload.reason in ["not_relevant", "dislike"] and payload.task_title:
+            domain = payload.category if payload.category in ["Diet", "Activity", "Sleep", "Vitals"] else "General"
+            constraint_msg = f"Prefers not to do {payload.task_title.lower()}"
+            try:
+                pref_check = supabase.table("patient_preferences").select("id").eq("patient_id", payload.patient_id).eq("constraint_text", constraint_msg).execute()
+                if not pref_check.data:
+                    supabase.table("patient_preferences").insert({
+                        "patient_id": payload.patient_id,
+                        "domain": domain,
+                        "constraint_text": constraint_msg
+                    }).execute()
+            except Exception as pe:
+                print(f"Failed to record negative preference: {pe}")
+
+        return {"status": "success", "message": "Action dismissed."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class UpdateCarePlanActionStatusPayload(BaseModel):
+    status: str  # "Agreed", "Paused", "Abandoned", "Completed", "Archived"
+
+@router.post("/care-plan/actions/{action_id}/status")
+async def update_care_plan_action_status(action_id: str, payload: UpdateCarePlanActionStatusPayload):
+    """
+    Allows user or Coach to update the status of a care plan action (e.g. pause habit).
+    """
+    try:
+        from app.services.insights.data_fetcher import supabase
+        supabase.table("care_plan_actions").update({"status": payload.status}).eq("id", action_id).execute()
+        return {"status": "success", "message": f"Action status updated to {payload.status}."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/daily-plan")
 async def get_daily_plan(payload: DailyPlanRequest):
     """

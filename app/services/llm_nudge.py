@@ -199,6 +199,14 @@ async def generate_clinical_nudge(insights: Any, patient_name: str = "Ranjit", p
                             res_db = supabase.table("nudge_alerts").insert(nudge_record).execute()
                             if res_db.data and len(res_db.data) > 0:
                                 parsed["created_at"] = res_db.data[0].get("created_at")
+                                new_nudge_id = res_db.data[0].get("id")
+                                if new_nudge_id:
+                                    try:
+                                        import asyncio
+                                        from app.services.clinical_advisor import audit_nudge_alert_async
+                                        asyncio.create_task(audit_nudge_alert_async(new_nudge_id, supabase))
+                                    except Exception as audit_launch_err:
+                                        print(f"[ClinicalAdvisor] Could not launch async audit: {audit_launch_err}")
                         except Exception as db_err:
                             print(f"Failed to save nudge_alert to DB: {db_err}")
                             

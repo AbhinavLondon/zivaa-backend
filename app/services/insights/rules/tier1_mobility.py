@@ -111,10 +111,11 @@ class AcuteFunctionalCollapseRule(InsightRule):
             or (cadence.latest > 0 and cadence.latest < 55.0)
         )
 
-        # 2. Movement collapse check (< 50% of baseline or < 10 mins)
+        # 2. Movement collapse check (< 50% of baseline or < 10 mins on completed day)
+        mins_val = active_mins.latest_completed
         is_movement_plummeted = (
-            (mins_base > 0 and active_mins.latest < mins_base * 0.50)
-            or (active_mins.latest < 10.0)
+            (mins_base > 0 and mins_val < mins_base * 0.50)
+            or (mins_val < 10.0)
         )
 
         # 3. Physiological stress / Tachycardia (> baseline + 10 bpm or >= 90 bpm)
@@ -125,9 +126,10 @@ class AcuteFunctionalCollapseRule(InsightRule):
                 or rhr.latest >= 90.0
             )
 
-        # 4. Severe sedentary confinement (<= 4 active hours out of daytime)
+        # 4. Severe sedentary confinement (<= 4 active hours on completed day)
+        hours_val = active_hours.latest_completed
         is_sedentary_confinement = (
-            active_hours.has_data and active_hours.latest > 0 and active_hours.latest <= 4
+            active_hours.has_data and hours_val > 0 and hours_val <= 4
         )
 
         if is_cadence_depressed and is_movement_plummeted and (has_cardiac_stress or is_sedentary_confinement):
@@ -135,8 +137,9 @@ class AcuteFunctionalCollapseRule(InsightRule):
             if has_cardiac_stress:
                 stress_desc.append(f"elevated resting heart rate of {rhr.latest:.0f} bpm (baseline: {rhr_base:.0f})")
             if is_sedentary_confinement:
-                stress_desc.append(f"active in only {active_hours.latest:.0f} hours today")
+                stress_desc.append(f"active in only {hours_val:.0f} hours")
             stress_str = " and ".join(stress_desc) if stress_desc else "pronounced daytime confinement"
+
 
             return self.trigger(
                 severity=RiskLevel.HIGH,
@@ -227,10 +230,12 @@ class CardiopulmonaryDecompensationRule(InsightRule):
             else active_mins.baseline(days=7)
         )
 
-        # 1. Moving duration dropping (> 30% drop)
+        # 1. Moving duration dropping (> 30% drop on completed day)
+        mins_val = active_mins.latest_completed
         is_exertion_dropping = (
-            mins_base > 0 and active_mins.latest < mins_base * 0.70
+            mins_base > 0 and mins_val < mins_base * 0.70
         )
+
 
         # 2. Cadence slowing (drop by >= 10 spm from baseline)
         is_cadence_slowing = (
@@ -501,13 +506,15 @@ class EWGSOP2SarcopeniaScreenRule(InsightRule):
         if not cadence.has_data or not active_mins.has_data:
             return self.skip_rule("Requires walking cadence and active movement minutes")
 
-        # 14-day trailing window
-        cutoff = datetime.now().date() - timedelta(days=14)
-        recent_cadence = [d.value for d in cadence.data if d.date >= cutoff and d.value > 0]
-        recent_mins = [d.value for d in active_mins.data if d.date >= cutoff]
-        recent_steps = [d.value for d in steps.data if d.date >= cutoff]
+        # 14-day trailing window of completed days (excludes in-progress today)
+        today_local = datetime.now().date()
+        cutoff = today_local - timedelta(days=14)
+        recent_cadence = [d.value for d in cadence.data if cutoff <= d.date < today_local and d.value > 0]
+        recent_mins = [d.value for d in active_mins.data if cutoff <= d.date < today_local]
+        recent_steps = [d.value for d in steps.data if cutoff <= d.date < today_local]
 
         if len(recent_cadence) < 5:
+
             return self.skip_rule("Need at least 5 days of mobility data in the last 14 days for sarcopenia screening")
 
         med_cadence = statistics.median(recent_cadence)

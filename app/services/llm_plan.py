@@ -37,7 +37,9 @@ if user_site not in sys.path and os.path.exists(user_site):
 
 import httpx
 import json
+import re
 import time
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional, Tuple
 from app.config import settings
@@ -98,6 +100,359 @@ class InsightsCache:
 
 # Global cache instance
 _insights_cache = InsightsCache()
+
+
+# ═══════════════════════════════════════════════════════════════════
+# 1B. ANATOMICAL ALIASES & EXERCISE CATALOG
+# ═══════════════════════════════════════════════════════════════════
+
+ANATOMICAL_ALIASES: Dict[str, str] = {
+    # Lower Back
+    "lumbar": "Lower Back",
+    "lower back": "Lower Back",
+    "low back": "Lower Back",
+    "spine": "Lower Back",
+    "spinal": "Lower Back",
+    "sciatica": "Lower Back",
+    "sciatic": "Lower Back",
+    "sacrum": "Lower Back",
+    "back pain": "Lower Back",
+    "back": "Lower Back",
+    
+    # Shoulders / Neck
+    "cervical": "Shoulders / Neck",
+    "neck": "Shoulders / Neck",
+    "trapezius": "Shoulders / Neck",
+    "trap": "Shoulders / Neck",
+    "traps": "Shoulders / Neck",
+    "shoulder": "Shoulders / Neck",
+    "shoulders": "Shoulders / Neck",
+    "rotator cuff": "Shoulders / Neck",
+    "rotator": "Shoulders / Neck",
+    "scapula": "Shoulders / Neck",
+    "upper back": "Shoulders / Neck",
+    
+    # Knees / Legs
+    "knee": "Knees / Legs",
+    "knees": "Knees / Legs",
+    "patella": "Knees / Legs",
+    "patellar": "Knees / Legs",
+    "quadriceps": "Knees / Legs",
+    "quad": "Knees / Legs",
+    "quads": "Knees / Legs",
+    "hamstring": "Knees / Legs",
+    "hamstrings": "Knees / Legs",
+    "calf": "Knees / Legs",
+    "calves": "Knees / Legs",
+    "leg": "Knees / Legs",
+    "legs": "Knees / Legs",
+    "thigh": "Knees / Legs",
+    
+    # Ankles / Feet
+    "ankle": "Ankles / Feet",
+    "ankles": "Ankles / Feet",
+    "foot": "Ankles / Feet",
+    "feet": "Ankles / Feet",
+    "plantar": "Ankles / Feet",
+    "heel": "Ankles / Feet",
+    "toe": "Ankles / Feet",
+    "toes": "Ankles / Feet",
+    
+    # Wrists / Hands
+    "wrist": "Wrists / Hands",
+    "wrists": "Wrists / Hands",
+    "hand": "Wrists / Hands",
+    "hands": "Wrists / Hands",
+    "finger": "Wrists / Hands",
+    "fingers": "Wrists / Hands",
+    "grip": "Wrists / Hands",
+    "carpal": "Wrists / Hands",
+    
+    # Hip
+    "hip": "Hip",
+    "hips": "Hip",
+    "glute": "Hip",
+    "glutes": "Hip",
+    "pelvis": "Hip",
+    "pelvic": "Hip",
+    "groin": "Hip",
+    
+    # Core
+    "core": "Core",
+    "abdominal": "Core",
+    "abdomen": "Core",
+    "abs": "Core",
+    "belly": "Core",
+    
+    # Full Body / Balance
+    "balance": "Full Body / Balance",
+    "stability": "Full Body / Balance",
+    "fall prevention": "Full Body / Balance",
+    "gait": "Full Body / Balance",
+    "full body": "Full Body / Balance",
+    "posture": "Full Body / Balance",
+}
+
+
+class ExerciseCatalog:
+    """
+    Cached access to zivaa_exercise_repository to ground daily exercise
+    recommendations in verified clinical senior movements.
+    """
+    _cached_exercises: Optional[List[Dict[str, Any]]] = None
+    _cached_timestamp: float = 0.0
+    TTL: float = 86400.0  # 24 hours
+
+    @classmethod
+    def get_exercises(cls) -> List[Dict[str, Any]]:
+        if cls._cached_exercises is not None and (time.time() - cls._cached_timestamp < cls.TTL):
+            return cls._cached_exercises
+        try:
+            from app.services.insights.data_fetcher import supabase
+            res = supabase.table("zivaa_exercise_repository") \
+                .select("id, exercise_name, body_part, type, duration_seconds, benefits, equipment_needed, difficulty") \
+                .execute()
+            cls._cached_exercises = res.data or []
+            cls._cached_timestamp = time.time()
+        except Exception as e:
+            print(f"Warning: Failed to fetch exercise repository: {e}")
+            cls._cached_exercises = []
+        return cls._cached_exercises
+
+    @classmethod
+    def get_available_body_parts(cls) -> List[str]:
+        exercises = cls.get_exercises()
+        parts = {e.get("body_part") for e in exercises if e.get("body_part")}
+        return sorted(list(parts))
+
+    @classmethod
+    def resolve_body_part_from_text(cls, text: str) -> Optional[str]:
+        if not text:
+            return None
+        text_lower = text.lower()
+        
+        # 1. Check direct catalog body parts first (longest names first)
+        available = sorted(cls.get_available_body_parts(), key=lambda x: len(x), reverse=True)
+        for bp in available:
+            pattern = rf"\b{re.escape(bp.lower())}\b"
+            if re.search(pattern, text_lower):
+                return bp
+                
+        # 2. Check clinical and anatomical aliases (longest phrases first)
+        sorted_aliases = sorted(ANATOMICAL_ALIASES.keys(), key=lambda x: len(x), reverse=True)
+        for alias in sorted_aliases:
+            pattern = rf"\b{re.escape(alias)}\b"
+            if re.search(pattern, text_lower):
+                return ANATOMICAL_ALIASES[alias]
+                
+        return None
+
+    @classmethod
+    def find_exercises(
+        cls, 
+        body_part: Optional[str] = None, 
+        exercise_type: Optional[str] = None, 
+        difficulty: Optional[str] = "beginner", 
+        limit: int = 3
+    ) -> List[Dict[str, Any]]:
+        exercises = cls.get_exercises()
+        if not exercises:
+            return []
+        matches = []
+        for ex in exercises:
+            bp = (ex.get("body_part") or "").lower()
+            et = (ex.get("type") or "").lower()
+            diff = (ex.get("difficulty") or "").lower()
+            
+            # Enforce difficulty safety if specified
+            if difficulty and diff and diff != difficulty.lower():
+                continue
+
+            if body_part and body_part.lower() in bp:
+                matches.append(ex)
+            elif exercise_type and exercise_type.lower() in et:
+                matches.append(ex)
+        if not matches:
+            matches = [
+                ex for ex in exercises 
+                if (not difficulty or (ex.get("difficulty") or "").lower() == difficulty.lower()) 
+                and ("balance" in (ex.get("body_part") or "").lower() or "mobility" in (ex.get("type") or "").lower() or "stretch" in (ex.get("type") or "").lower())
+            ]
+        return matches[:limit]
+
+    @classmethod
+    def match_exercises_for_text(
+        cls, 
+        text: str, 
+        target_body_part: Optional[str] = None, 
+        difficulty: Optional[str] = "beginner", 
+        limit: int = 2
+    ) -> List[Dict[str, Any]]:
+        exercises = cls.get_exercises()
+        if not exercises:
+            return []
+            
+        # 1. Determine target body part
+        bp = target_body_part or cls.resolve_body_part_from_text(text)
+        if bp:
+            matched = cls.find_exercises(body_part=bp, difficulty=difficulty, limit=limit)
+            if matched:
+                return matched
+
+        # 2. Search exercise name, benefits, or type matching
+        clean_words = set(re.findall(r'\b[a-zA-Z]{4,}\b', text.lower()))
+        stop_words = {"with", "this", "that", "from", "your", "have", "more", "some", "time", "done", "will", "make"}
+        search_words = clean_words - stop_words
+
+        scored: List[Tuple[int, Dict[str, Any]]] = []
+        for ex in exercises:
+            diff = (ex.get("difficulty") or "").lower()
+            if difficulty and diff and diff != difficulty.lower():
+                continue
+            name_lower = (ex.get("exercise_name") or "").lower()
+            benefits_lower = (ex.get("benefits") or "").lower()
+            ex_type_lower = (ex.get("type") or "").lower()
+            
+            score = 0
+            for w in search_words:
+                if w in name_lower:
+                    score += 4
+                if w in benefits_lower:
+                    score += 2
+                if w in ex_type_lower:
+                    score += 3
+            if score > 0:
+                scored.append((score, ex))
+                
+        if scored:
+            scored.sort(key=lambda x: x[0], reverse=True)
+            return [x[1] for x in scored[:limit]]
+
+        # 3. Safe fallback to gentle senior mobility/balance
+        return cls.find_exercises(exercise_type="mobility", difficulty=difficulty, limit=limit)
+
+
+def resolve_task_action(act: Dict[str, Any], default_mobility_ids: List[str]) -> Dict[str, Any]:
+    """
+    Intelligently resolves the UI TaskAction payload for an agreed care action.
+    Prioritizes pre-structured metadata, then classifies intent cleanly with
+    errand and clinical guardrails.
+    """
+    desc = act.get("description", "")
+    desc_lower = desc.lower()
+    operational_type = act.get("action_type", "habit")
+    
+    # Check if pre-structured metadata exists (e.g. from upstream memory_summarizer)
+    meta = act.get("action_metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except Exception:
+            meta = {}
+            
+    if meta.get("ui_action_type") or meta.get("action_type"):
+        ui_type = meta.get("ui_action_type") or meta.get("action_type")
+        cta = meta.get("cta_label") or ("Start Routine" if ui_type == "FOLLOW_EXERCISE" else ("Ask Zivaa" if ui_type == "COACH_CHAT" else "Done"))
+        payload: Dict[str, Any] = {
+            "action_type": ui_type,
+            "type": ui_type,
+            "cta_label": cta,
+        }
+        if ui_type == "FOLLOW_EXERCISE":
+            payload["exercise_ids"] = meta.get("exercise_ids") or default_mobility_ids
+            payload["routine_title"] = meta.get("routine_title") or desc
+        if meta.get("target"):
+            payload["target"] = meta["target"]
+        if meta.get("prefilled_prompt"):
+            payload["prefilled_prompt"] = meta["prefilled_prompt"]
+        return payload
+
+    # 1. Guardrail against Errands / One-off Tasks
+    # If it's a one-off errand (buy medication, see doctor, pick up supplies), it's CHECKBOX_ONLY, even if it contains "walk"!
+    is_errand = (operational_type == "one_off") or any(kw in desc_lower for kw in [
+        "pharmacy", "chemist", "doctor", "appointment", "clinic", "hospital",
+        "buy ", "purchase", "pick up", "order ", "refill"
+    ])
+    if is_errand:
+        return {
+            "action_type": "CHECKBOX_ONLY",
+            "type": "CHECKBOX_ONLY",
+            "cta_label": "Done"
+        }
+
+    # 2. Vitals Logging Intent
+    is_bp = any(kw in desc_lower for kw in ["blood pressure", "bp ", "bp reading", "systolic", "diastolic", "check bp", "log bp"])
+    if is_bp:
+        return {
+            "action_type": "LOG_VITALS",
+            "type": "LOG_VITALS",
+            "target": "blood_pressure",
+            "cta_label": "Record BP"
+        }
+        
+    is_glucose = any(kw in desc_lower for kw in ["glucose", "blood sugar", "sugar reading", "fasting sugar", "postprandial", "check sugar", "log sugar"])
+    if is_glucose:
+        return {
+            "action_type": "LOG_VITALS",
+            "type": "LOG_VITALS",
+            "target": "glucose",
+            "cta_label": "Log Sugar"
+        }
+
+    # 3. Nutrition Intent
+    is_meal = any(kw in desc_lower for kw in [
+        "snap meal", "log meal", "food photo", "photo of meal", "meal photo",
+        "photo of food", "snap food", "log food", "track food", "log lunch",
+        "log dinner", "log breakfast", "track lunch", "track dinner", "track breakfast"
+    ]) or (("photo" in desc_lower or "snap" in desc_lower or "log" in desc_lower or "track" in desc_lower) and any(m in desc_lower for m in ["meal", "breakfast", "lunch", "dinner", "food", "snack"]))
+    if is_meal:
+        return {
+            "action_type": "LOG_MEAL",
+            "type": "LOG_MEAL",
+            "target": "nutrition",
+            "cta_label": "Snap Meal"
+        }
+
+    # 4. Coach Chat Intent
+    is_coach = any(kw in desc_lower for kw in ["ask zivaa", "ask coach", "check in with zivaa", "chat with zivaa", "discuss with zivaa", "message zivaa", "talk to zivaa"])
+    if is_coach:
+        return {
+            "action_type": "COACH_CHAT",
+            "type": "COACH_CHAT",
+            "cta_label": "Ask Zivaa",
+            "prefilled_prompt": f"I want to follow up on: {desc}"
+        }
+
+    # 5. Exercise / Movement Intent
+    # Look for movement keywords OR anatomical targets
+    target_bp = act.get("target_body_part") or ExerciseCatalog.resolve_body_part_from_text(desc)
+    is_exercise_keyword = any(kw in desc_lower for kw in [
+        "exercise", "stretch", "workout", "routine", "squat", "mobility", 
+        "yoga", "walk", "walking", "stroll", "strengthening", "reps", "flexibility"
+    ])
+    
+    if target_bp or is_exercise_keyword:
+        matched = ExerciseCatalog.match_exercises_for_text(
+            text=desc,
+            target_body_part=target_bp,
+            difficulty="Beginner",
+            limit=2
+        )
+        ex_ids = [str(e["id"]) for e in matched] if matched else default_mobility_ids
+        return {
+            "action_type": "FOLLOW_EXERCISE",
+            "type": "FOLLOW_EXERCISE",
+            "cta_label": "Start Routine",
+            "exercise_ids": ex_ids,
+            "routine_title": desc
+        }
+
+    # 6. Default Fallback
+    return {
+        "action_type": "CHECKBOX_ONLY",
+        "type": "CHECKBOX_ONLY",
+        "cta_label": "Done"
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -218,9 +573,18 @@ def build_plan_context(patient_id: str, phone_location: str = None) -> Dict[str,
                 patient_info["location"])
             dob = resp.data.get("date_of_birth")
             if dob:
-                birth = datetime.strptime(dob, "%Y-%m-%d").date() \
-                    if isinstance(dob, str) else dob
-                patient_info["age"] = (datetime.now().date() - birth).days // 365
+                birth = None
+                if isinstance(dob, str):
+                    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m-%d-%Y", "%d/%m/%Y", "%Y/%m/%d"):
+                        try:
+                            birth = datetime.strptime(dob, fmt).date()
+                            break
+                        except ValueError:
+                            continue
+                else:
+                    birth = dob
+                if birth:
+                    patient_info["age"] = (datetime.now().date() - birth).days // 365
             
             # Fetch Temperature
             target_city = phone_location or patient_info.get("location")
@@ -453,6 +817,13 @@ def build_plan_context(patient_id: str, phone_location: str = None) -> Dict[str,
             .execute()
             
         if sym_resp.data:
+            from app.utils.crypto import decrypt_text
+            for s in sym_resp.data:
+                try:
+                    if s.get("name"):
+                        s["name"] = decrypt_text(s["name"])
+                except Exception:
+                    pass
             symptoms.extend(sym_resp.data)
             
     except Exception as e:
@@ -466,7 +837,20 @@ def build_plan_context(patient_id: str, phone_location: str = None) -> Dict[str,
             .eq("patient_id", patient_id) \
             .execute()
         if act_resp.data:
-            agreed_actions = [a for a in act_resp.data if a.get("status") == "Agreed"]
+            current_weekday = datetime.now(timezone.utc).strftime("%A").lower()
+            filtered_agreed = []
+            for a in act_resp.data:
+                st = a.get("status")
+                # Only include active agreed actions (skip Paused, Abandoned, Archived, Completed one-offs)
+                if st != "Agreed":
+                    continue
+                cadence = (a.get("cadence") or "daily").lower()
+                if cadence.startswith("weekly_"):
+                    target_day = cadence.replace("weekly_", "")
+                    if target_day != current_weekday:
+                        continue  # Skip periodic actions on non-designated days
+                filtered_agreed.append(a)
+            agreed_actions = filtered_agreed
             suggested_actions = [a for a in act_resp.data if a.get("status") == "Suggested"]
     except Exception as e:
         print(f"Warning: Could not fetch care plan actions for {patient_id}: {e}")
@@ -714,22 +1098,23 @@ def get_fallback_daily_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]:
             active_conditions.add("cardiovascular")
 
     # ── Build universal base schedule ──
+    mobility_exercises = [str(e["id"]) for e in ExerciseCatalog.find_exercises(exercise_type="mobility", limit=2)] or ["53", "55"]
     schedule = {
         "morning": [
-            {"task": "Drink warm water", "time": "7:00 AM", "completed": False, "category": "Diet", "details": "Start your day with a glass of warm water for digestion."},
-            {"task": f"Eat {foods['breakfast']}", "time": "8:30 AM", "completed": False, "category": "Diet", "details": "Have a nutritious breakfast to energize your morning."},
-            {"task": "Do morning stretches", "time": "9:00 AM", "completed": False, "category": "Activity", "details": "Stretch lightly to improve joint mobility and blood flow."},
+            {"task": "Drink warm water", "time": "7:00 AM", "completed": False, "category": "Diet", "details": "Start your day with a glass of warm water for digestion.", "action": {"action_type": "CHECKBOX_ONLY", "type": "CHECKBOX_ONLY", "cta_label": "Done"}},
+            {"task": f"Eat {foods['breakfast']}", "time": "8:30 AM", "completed": False, "category": "Diet", "details": "Have a nutritious breakfast to energize your morning.", "action": {"action_type": "LOG_MEAL", "type": "LOG_MEAL", "target": "nutrition", "cta_label": "Log Meal"}},
+            {"task": "Morning Mobility Routine", "time": "9:00 AM", "completed": False, "category": "Activity", "details": "Stretch lightly to improve joint mobility and blood flow.", "action": {"action_type": "FOLLOW_EXERCISE", "type": "FOLLOW_EXERCISE", "target": "routine", "routine_title": "Morning Mobility Routine", "cta_label": "Start Routine", "exercise_ids": mobility_exercises}},
         ],
         "afternoon": [
-            {"task": f"Eat {foods['lunch']}", "time": "1:00 PM", "completed": False, "category": "Diet", "details": "Enjoy a balanced lunch for steady afternoon energy."},
-            {"task": "Drink glass water", "time": "3:00 PM", "completed": False, "category": "Diet", "details": "Stay hydrated throughout the day."},
+            {"task": f"Eat {foods['lunch']}", "time": "1:00 PM", "completed": False, "category": "Diet", "details": "Enjoy a balanced lunch for steady afternoon energy.", "action": {"action_type": "LOG_MEAL", "type": "LOG_MEAL", "target": "nutrition", "cta_label": "Log Meal"}},
+            {"task": "Drink glass water", "time": "3:00 PM", "completed": False, "category": "Diet", "details": "Stay hydrated throughout the day.", "action": {"action_type": "CHECKBOX_ONLY", "type": "CHECKBOX_ONLY", "cta_label": "Done"}},
         ],
         "evening": [
-            {"task": f"Eat {foods['dinner']}", "time": "7:30 PM", "completed": False, "category": "Diet", "details": "Have a light, easy-to-digest dinner."},
+            {"task": f"Eat {foods['dinner']}", "time": "7:30 PM", "completed": False, "category": "Diet", "details": "Have a light, easy-to-digest dinner.", "action": {"action_type": "LOG_MEAL", "type": "LOG_MEAL", "target": "nutrition", "cta_label": "Log Meal"}},
         ],
         "night": [
-            {"task": "Take bedtime medications", "time": "9:45 PM", "completed": False, "category": "Medication", "details": "Take any prescribed night-time medications."},
-            {"task": "Prepare dark bedroom", "time": "10:00 PM", "completed": False, "category": "Sleep", "details": "Dim the lights and ensure your bedroom is quiet for restful sleep."},
+            {"task": "Take bedtime medications", "time": "9:45 PM", "completed": False, "category": "Medication", "details": "Take any prescribed night-time medications.", "action": {"action_type": "CHECKBOX_ONLY", "type": "CHECKBOX_ONLY", "cta_label": "Taken"}},
+            {"task": "Prepare dark bedroom", "time": "10:00 PM", "completed": False, "category": "Sleep", "details": "Dim the lights and ensure your bedroom is quiet for restful sleep.", "action": {"action_type": "CHECKBOX_ONLY", "type": "CHECKBOX_ONLY", "cta_label": "Done"}},
         ],
     }
 
@@ -762,7 +1147,8 @@ def get_fallback_daily_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]:
                         slot_has_meal.add(slot)
 
     # ── Medication adherence adjustment ──
-    if med_adherence.get("rate", 100) < 80:
+    med_rate = med_adherence.get("rate") if med_adherence.get("rate") is not None else 100
+    if med_rate < 80:
         med_task = {"task": "Set medication reminder", "time": "9:00 AM", "completed": False, "category": "Medication", "details": "Set an alarm to ensure you don't miss any doses today."}
         task_key = "set medication reminder"
         if task_key not in seen_tasks:
@@ -791,6 +1177,31 @@ def get_fallback_daily_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]:
         task = {"task": "Do deep breathing", "time": "8:00 PM", "completed": False, "category": "Mindfulness", "details": "Practice deep breathing to help lower your blood pressure and heart rate."}
         if "do deep breathing" not in seen_tasks:
             schedule["evening"].append(task)
+
+    # ── Compose agreed coach actions into schedule ──
+    agreed_coach_actions = plan_context.get("agreed_actions", [])
+    for act in agreed_coach_actions:
+        desc = act.get("description", "")
+        act_id = str(act.get("id", ""))
+        act_type = act.get("action_type", "habit")
+        badge = "HABIT" if act_type == "habit" else ("ERRAND" if act_type == "one_off" else "COACH AGREED")
+        action_payload = resolve_task_action(act, default_mobility_ids=mobility_exercises)
+            
+        target_slot = "morning" if len(schedule["morning"]) < 3 else ("afternoon" if len(schedule["afternoon"]) < 2 else "evening")
+        schedule[target_slot].append({
+            "id": act_id or str(uuid.uuid4()),
+            "task": desc[:25],
+            "time": "10:30 AM" if target_slot == "morning" else "3:30 PM",
+            "completed": False,
+            "category": "Coach",
+            "details": f"Agreed with Coach Zivaa: {desc}",
+            "tier": "coach",
+            "anchor_type": act_type,
+            "anchor_id": act_id,
+            "provenance": {"source": "coach", "badge": badge, "badge_text": badge, "reason": "Agreed during your conversation with Coach Zivaa"},
+            "action": action_payload
+        })
+
 
     # ── Cap each slot at 4 tasks ──
     for slot in schedule:
@@ -832,7 +1243,7 @@ def get_fallback_daily_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]:
             " Since sleep was short last night, let's keep things gentle."
         )
 
-    if med_adherence.get("rate", 100) < 80:
+    if med_rate < 80:
         summary_parts.append(
             " Some medications were missed recently — medication reminders "
             "have been added."
@@ -840,7 +1251,8 @@ def get_fallback_daily_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]:
 
     summary = " ".join(summary_parts)
 
-    return {
+    from app.services.plan_schema import DailyPlanResponse
+    return DailyPlanResponse.model_validate({
         "summary": summary,
         "schedule": schedule,
         "health_context": {
@@ -851,7 +1263,7 @@ def get_fallback_daily_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]:
             "med_adherence_rate": med_adherence.get("rate"),
         },
         "active_alerts": [i.get("name", "") for i in insights[:5]],
-    }
+    }).model_dump()
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1024,6 +1436,19 @@ async def generate_daily_plan(
         action_lines.extend([f"- {a.get('description', '')}" for a in suggested_actions])
     actions_bullet = "\n".join(action_lines) if action_lines else "No specific coach actions recorded."
 
+    # Format sample exercises from repository for LLM grounding
+    available_exercises = ExerciseCatalog.get_exercises()
+    sample_ex_lines = []
+    if available_exercises:
+        by_bp = {}
+        for ex in available_exercises:
+            bp = ex.get("body_part", "General")
+            if bp not in by_bp and len(by_bp) < 8:
+                by_bp[bp] = ex
+        for bp, ex in by_bp.items():
+            sample_ex_lines.append(f"- [ID: {ex.get('id')}] {ex.get('exercise_name')} ({bp} / {ex.get('type')})")
+    exercise_sample_str = "\n".join(sample_ex_lines) if sample_ex_lines else "Repository available."
+
     prompt = f"""
     You are a caring and expert conversational clinical guide for Zivaa Eldercare.
     Create a personalized daily plan (morning, afternoon, evening, night) for:
@@ -1060,6 +1485,9 @@ async def generate_daily_plan(
     CARE PLAN ACTIONS (from Coach):
 {actions_bullet}
 
+    EXERCISE REPOSITORY EXAMPLES:
+{exercise_sample_str}
+
     CONDITION-SPECIFIC INSTRUCTIONS:
 {condition_instructions_str}
 
@@ -1074,6 +1502,18 @@ async def generate_daily_plan(
     8. CRITICAL: Food items MUST be specific, healthy Indian recipes suited for {patient_location or 'India'}.
     9. The plan MUST address the active health alerts listed above.
     10. CRITICAL: Provide a canonical 'category' (e.g. 'Activity', 'Diet', 'Medication') and 'details' (1-2 sentences explaining why and how to do it) for every task.
+    11. CRITICAL EXERCISE GROUNDING: When scheduling physical activity, stretching, or movement:
+        - Pick real exercises from the repository above.
+        - Set 'action': {{ 'type': 'FOLLOW_EXERCISE', 'cta_label': 'Follow Exercises', 'exercise_ids': ['<id1>', '<id2>'] }}.
+    12. CRITICAL CTA MAPPING:
+        - For Vitals (BP / Glucose): set 'action': {{ 'type': 'LOG_VITALS', 'target': 'blood_pressure' or 'glucose', 'cta_label': 'Record BP' or 'Log Sugar' }}.
+        - For Meals / Nutrition: set 'action': {{ 'type': 'LOG_MEAL', 'target': 'nutrition', 'cta_label': 'Snap Meal' }}.
+        - For Coach / Symptom Check: set 'action': {{ 'type': 'COACH_CHAT', 'cta_label': 'Ask Zivaa', 'prefilled_prompt': '...' }}.
+        - For routine / water / lights: set 'action': {{ 'type': 'CHECKBOX_ONLY', 'cta_label': 'Done' }}.
+    13. CRITICAL PROVENANCE:
+        - If task addresses an active health alert, set 'tier': 'clinical', 'provenance': {{ 'badge': 'NEW', 'reason': '...' }}.
+        - If task comes from Agreed Coach Actions, set 'tier': 'coach', 'anchor_id': '<action_id>', 'provenance': {{ 'badge': 'COACH AGREED' or 'HABIT', 'reason': 'Agreed with Coach Zivaa' }}.
+
 
     Format as exact JSON:
     {{
@@ -1107,7 +1547,7 @@ async def generate_daily_plan(
                             "responseSchema": get_gemini_schema()
                         },
                     },
-                    timeout=20.0,
+                    timeout=60.0,
                 )
                 if response.status_code == 200:
                     response_json = response.json()

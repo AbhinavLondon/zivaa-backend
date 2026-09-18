@@ -166,6 +166,8 @@ class FunctionalDeclineRule(InsightRule):
         steps_bl = steps.established_baseline
         # Use a 3-day sustained average to prevent false alarms from a single rest/sick day
         steps_3d_avg = steps.rolling_average(days=3)
+        if steps_3d_avg is None:
+            return self.skip_rule("Insufficient completed history for 3-day average")
         
         steps_z = ((steps_bl.mean - steps_3d_avg) / steps_bl.std) if steps_bl.std > 0 else 0
         is_below_floor = steps_3d_avg < self.ABSOLUTE_STEP_FLOOR
@@ -176,9 +178,11 @@ class FunctionalDeclineRule(InsightRule):
         # Zivaa enhancement: exercise_minutes compensation
         # If patient has low steps but recorded structured exercise (yoga, physio,
         # swimming), they may not actually be declining. Downgrade severity.
+        exercise_val = exercise.latest_completed if exercise.has_data else 0.0
         exercise_compensated = (
-            exercise.has_data and exercise.latest >= self.EXERCISE_COMPENSATION_MIN
+            exercise.has_data and (exercise.latest >= self.EXERCISE_COMPENSATION_MIN or exercise_val >= self.EXERCISE_COMPENSATION_MIN)
         )
+
 
         if is_below_floor:
             if exercise_compensated:

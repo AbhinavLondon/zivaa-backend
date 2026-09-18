@@ -515,9 +515,8 @@ Review the following patient clinical chart:
 For each active concern you identify:
 1. Assess the severity (LOW, MEDIUM, HIGH) using standard clinical practice guidelines (e.g. ADA for HbA1c, AHA for blood pressure, KDIGO for kidney function).
 2. Map it to one of these category values: CARDIAC, METABOLIC, RENAL, RESPIRATORY, HEMATOLOGY, THYROID, NUTRITION, MENTAL_HEALTH, GENERAL.
-3. Assign a short, descriptive rule_id in snake_case (e.g., 'hypertension_escalation', 'prediabetes_progression').
-4. Write a concise, supportive message explaining the concern. You MUST explicitly state the exact numerical baseline value for any anomalous metric you mention, formatted to a maximum of 1 decimal place (e.g., 'baseline 95.2%'). Do not use vague terms like 'above baseline' without providing the numerical baseline value. Reference specific values and guideline citations where appropriate. If a lab result or reading is from an older historical report (e.g., more than a few months old), explicitly state its date in your message so it is clear it is a historical finding.
-5. Populate the evidence array with the exact metrics and values that triggered this alert (e.g. [{{"metric": "bp_systolic", "value": "142"}}]).
+3. Write a concise, supportive message explaining the concern. You MUST explicitly state the exact numerical baseline value for any anomalous metric you mention, formatted to a maximum of 1 decimal place (e.g., 'baseline 95.2%'). Do not use vague terms like 'above baseline' without providing the numerical baseline value. Reference specific values and guideline citations where appropriate. If a lab result or reading is from an older historical report (e.g., more than a few months old), explicitly state its date in your message so it is clear it is a historical finding.
+4. Populate the evidence array with the exact metrics and values that triggered this alert (e.g. [{{"metric": "bp_systolic", "value": "142"}}]).
 """
     
     # JSON Schema definition strictly enforces the output structure, eliminating the need 
@@ -868,6 +867,13 @@ Return ONLY valid JSON. No markdown backticks, no conversational filler, no reas
                 res_db = supabase.table("nudge_alerts").insert(nudge_record).execute()
                 if res_db.data and len(res_db.data) > 0:
                     parsed["created_at"] = res_db.data[0].get("created_at")
+                    new_nudge_id = res_db.data[0].get("id")
+                    if new_nudge_id:
+                        try:
+                            from app.services.clinical_advisor import audit_nudge_alert_async
+                            asyncio.create_task(audit_nudge_alert_async(new_nudge_id, supabase))
+                        except Exception as audit_launch_err:
+                            print(f"[ClinicalAdvisor] Could not launch async audit: {audit_launch_err}")
             except Exception as db_err:
                 print(f"Failed to save nudge_alert to DB: {db_err}")
                 
@@ -1220,10 +1226,15 @@ EXPECTED JSON SCHEMA:
         return validated
     except Exception as e:
         print(f"MedGemma Plan generation failed: {e}")
-        return {
-            "summary": get_fallback_text("morning_briefing", pref_lang),
-            "schedule": {"morning": [], "afternoon": [], "evening": [], "night": []}
-        }
+        try:
+            from app.services.llm_plan import get_fallback_daily_plan
+            return get_fallback_daily_plan(plan_context)
+        except Exception as fb_e:
+            print(f"Structured fallback also failed: {fb_e}")
+            return {
+                "summary": get_fallback_text("morning_briefing", pref_lang),
+                "schedule": {"morning": [], "afternoon": [], "evening": [], "night": []}
+            }
 
 async def generate_medgemma_summary(patient_id: str, patient_name: str = "your loved one") -> Dict[str, Any]:
     """Generates the 2-sentence morning briefing using MedGemma."""

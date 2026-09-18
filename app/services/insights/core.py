@@ -16,10 +16,13 @@ OVERNIGHT_METRICS: Set[str] = {
     "sleep_stage_3_pct", "sleep_stage_4_pct", "sleep_stage_5_pct", "sleep_stage_6_pct"
 }
 
+# Daily cumulative metrics that accumulate from 0 to N over the course of 24 hours.
+# These metrics cannot be evaluated for deficits/collapses until a 24-hour cycle is completed.
 CUMULATIVE_METRICS: Set[str] = {
-    "steps", "avg_heart_rate", "exercise_minutes", "avg_speed", "heart_rate_recovery",
-    "avg_cadence_spm", "active_movement_minutes", "active_hours_count"
+    "steps", "total_steps", "exercise_minutes", "active_movement_minutes",
+    "active_hours_count", "calories_burned", "distance_meters"
 }
+
 
 # Positive physical activity metrics where higher values represent healthy mobility
 POSITIVE_ACTIVITY_METRICS: Set[str] = {

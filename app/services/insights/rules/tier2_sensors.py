@@ -338,12 +338,13 @@ class FeverInfectionRule(InsightRule):
                 # Flag if HR is ABOVE the expected physiological response
                 hr_excess = actual_increase > (expected_hr_increase + self.HR_EXCESS_MARGIN_BPM)
 
-            # Activity crash (Zivaa supporting signal — not from a guideline)
+            # Activity crash (Zivaa supporting signal — evaluated on completed days)
             steps_low = False
             if steps.has_data and steps.is_baseline_established:
                 steps_bl = steps.established_baseline
-                steps_z = ((steps_bl.mean - steps.latest) / steps_bl.std) if steps_bl.std > 0 else 0
+                steps_z = ((steps_bl.mean - steps.latest_completed) / steps_bl.std) if steps_bl.std > 0 else 0
                 steps_low = steps_z > 1.5
+
 
             if hr_excess and steps_low:
                 return self.trigger(
@@ -857,9 +858,10 @@ class WearableHeartFailureRule(InsightRule):
         if not steps.has_data or not rhr.has_data:
             return self.skip_rule("Requires both Steps and Resting HR data.")
             
-        if steps.has_sufficient_history(3) and rhr.has_sufficient_history(3):
-            step_trend = steps.trend(days=3)
-            rhr_trend = rhr.trend(days=3)
+        if steps.has_sufficient_history(3, completed_only=True) and rhr.has_sufficient_history(3, completed_only=True):
+            step_trend = steps.trend(days=3, completed_only=True)
+            rhr_trend = rhr.trend(days=3, completed_only=True)
+
             
             # Drops by 15% and increases by 5 bpm
             if step_trend.percent_change <= -15 and (rhr_trend.end_value - rhr_trend.start_value >= 5):

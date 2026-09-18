@@ -100,8 +100,9 @@ class PreDiabetesProgressionRule(InsightRule):
         steps_declining = False
         if steps.has_data and steps.is_baseline_established:
             steps_bl = steps.established_baseline
-            steps_z = ((steps_bl.mean - steps.latest) / steps_bl.std) if steps_bl.std > 0 else 0
+            steps_z = ((steps_bl.mean - steps.latest_completed) / steps_bl.std) if steps_bl.std > 0 else 0
             steps_declining = steps_z > 1.5
+
 
         # Build evidence dict with RCV audit trail
         evidence = {
