@@ -557,16 +557,64 @@ async def run_morning_nudge_dispatch():
             if not all_alerts:
                 continue
                 
-            # Filter in Python for ones created or updated recently
+            # 1. Fetch latest daily telemetry to verify sleep presence
+            latest_vd_res = supabase.table("vitals_daily") \
+                .select("date, sleep_hours, waso_mins, awakenings_count") \
+                .eq("patient_id", patient_id) \
+                .order("date", desc=True) \
+                .limit(2) \
+                .execute()
+                
+            latest_vd = latest_vd_res.data[0] if (latest_vd_res.data and len(latest_vd_res.data) > 0) else None
+            latest_date_str = latest_vd.get("date")[:10] if (latest_vd and latest_vd.get("date")) else None
+            has_overnight_sleep = (latest_vd is not None and latest_vd.get("sleep_hours") is not None and latest_vd.get("sleep_hours") > 0)
+
+            # 2. Filter in Python for ones created or updated recently, with Sleep Event Date Guardrail
+            import re
             alerts = []
+            sleep_alerts_suppressed_due_to_missing_data = 0
+
             for a in all_alerts:
                 c_at = a.get("created_at")
                 u_at = a.get("updated_at")
-                # If either created_at or updated_at is within the last 12 hours, include it
-                if c_at and c_at >= twelve_hours_ago:
-                    alerts.append(a)
-                elif u_at and u_at >= twelve_hours_ago:
-                    alerts.append(a)
+                
+                # Check if recent (created or updated within last 12 hours) - PRESERVES updated_at
+                is_recent = (c_at and c_at >= twelve_hours_ago) or (u_at and u_at >= twelve_hours_ago)
+                if not is_recent:
+                    continue
+
+                # Identify if this is a sleep-specific rule
+                rule_id = (a.get("rule_id") or "").lower()
+                cat = (a.get("category") or "").upper()
+                is_sleep_rule = (cat == "SLEEP") or any(k in rule_id for k in ("sleep", "waso", "awakening"))
+
+                if is_sleep_rule:
+                    # Extract observation date from message (e.g., 'on 2026-09-16') or effective_datetime
+                    obs_date = None
+                    if a.get("effective_datetime"):
+                        obs_date = str(a.get("effective_datetime"))[:10]
+                    else:
+                        m_date = re.search(r'\b(\d{4}-\d{2}-\d{2})\b', a.get("message", ""))
+                        if m_date:
+                            obs_date = m_date.group(1)
+
+                    # If no sleep was recorded for the night leading into today
+                    if not has_overnight_sleep:
+                        # Stale sleep insight: The patient didn't record sleep last night.
+                        # Do NOT present this as an acute alert saying "Today's sleep was disturbed"!
+                        sleep_alerts_suppressed_due_to_missing_data += 1
+                        print(f"Morning Nudge Guardrail: Suppressing stale sleep alert '{a.get('name')}' for {patient_name} because no sleep session was recorded in vitals_daily for last night.")
+                        continue
+                    
+                    # If sleep was recorded, check whether this insight matches the latest sleep date
+                    if obs_date and latest_date_str and obs_date < latest_date_str:
+                        # Insight is from an earlier day's sleep, not the night that just ended
+                        sleep_alerts_suppressed_due_to_missing_data += 1
+                        print(f"Morning Nudge Guardrail: Suppressing prior-day sleep alert '{a.get('name')}' (date: {obs_date}) because it predates latest sleep session ({latest_date_str}).")
+                        continue
+
+                # Include legitimate acute alerts (cardiac, continuous vitals, or validated fresh sleep)
+                alerts.append(a)
                     
             if not alerts:
                 continue

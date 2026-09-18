@@ -330,6 +330,21 @@ def _clean_json(text: str) -> Dict[str, Any]:
 # 1. MEDGEMMA DIAGNOSTICS ENGINE
 # ═══════════════════════════════════════════════════════════════════
 
+SLEEP_STAGE_PROMPT_ANNOTATIONS = {
+    "sleep_stage_1_hours": "sleep_stage_1_hours [Awake Time during sleep session]",
+    "sleep_stage_1_pct": "sleep_stage_1_pct [Awake Percentage]",
+    "sleep_stage_2_hours": "sleep_stage_2_hours [Light/Unspecified Sleep Duration]",
+    "sleep_stage_2_pct": "sleep_stage_2_pct [Light/Unspecified Sleep Percentage]",
+    "sleep_stage_3_hours": "sleep_stage_3_hours [Out of Bed Duration]",
+    "sleep_stage_3_pct": "sleep_stage_3_pct [Out of Bed Percentage]",
+    "sleep_stage_4_hours": "sleep_stage_4_hours [Light / Core Sleep Duration]",
+    "sleep_stage_4_pct": "sleep_stage_4_pct [Light / Core Sleep Percentage]",
+    "sleep_stage_5_hours": "sleep_stage_5_hours [Deep / Slow-Wave Sleep Duration - Stage N3]",
+    "sleep_stage_5_pct": "sleep_stage_5_pct [Deep / Slow-Wave Sleep Percentage - Stage N3]",
+    "sleep_stage_6_hours": "sleep_stage_6_hours [REM Sleep Duration - Rapid Eye Movement]",
+    "sleep_stage_6_pct": "sleep_stage_6_pct [REM Sleep Percentage - Rapid Eye Movement]",
+}
+
 def format_patient_chart_prompt(ctx: EvalContext, include_labs: bool = True, active_insights: list = None) -> str:
     """
     Formats the patient's full raw telemetry and history into a structured text prompt for MedGemma.
@@ -394,7 +409,8 @@ def format_patient_chart_prompt(ctx: EvalContext, include_labs: bool = True, act
                 formatted_vals.append(val_str)
                 
             vals_str = ", ".join(formatted_vals)
-            lines.append(f"  - {name}:")
+            display_name = SLEEP_STAGE_PROMPT_ANNOTATIONS.get(name, name)
+            lines.append(f"  - {display_name}:")
             lines.append(f"    - Baseline: {baseline_str}")
             lines.append(f"    - Recent Readings (latest first): {vals_str}")
     lines.append("")
@@ -504,6 +520,7 @@ Please reconcile these existing issues with the new data:
     focus_prompt += "\n- CLINICAL GUIDELINE: Do not diagnose functional decline, elevated fall risk, or activity decrease based on a single day of low step count. Normal daily variation (charging device, weather, rest day) accounts for single-day fluctuations. Require a sustained drop or immobility over at least 3 consecutive completed days (e.g., Tudor-Locke 2011)."
     focus_prompt += "\n- POSITIVE ACTIVITY PRINCIPLE: High step counts, brisk cadence, and high active movement minutes are vital indicators of healthy mobility, cardiovascular reserve, and longevity in older adults (WHO 2020 Guidelines). NEVER flag or diagnose high physical activity as a medical pathology, risk flag, or 'unusually high activity level'."
     focus_prompt += "\n- PHYSIOLOGICAL EXERTION PRINCIPLE: During daytime hours of active movement (steps above baseline, active minutes >= 30, cadence >= 80), heart rate naturally and appropriately increases to supply working muscles (sinus tachycardia of exertion). NEVER interpret daytime elevated heart rate as an emergency cardiac spike or heart failure if the patient's night/sleep heart rate is normal (<75 bpm) and oxygen saturation is normal (SpO2 >= 95%)."
+    focus_prompt += "\n- SLEEP STAGING STANDARDS: Health Connect standards map sleep stages as follows: sleep_stage_1 = Awake, sleep_stage_4 = Light/Core Sleep, sleep_stage_5 = Deep/Slow-Wave Sleep (Stage N3), sleep_stage_6 = REM Sleep (Rapid Eye Movement). In evidence, populate the exact metric key (e.g., 'sleep_stage_5_hours' or 'sleep_stage_6_hours'). NEVER confuse Deep Sleep (stage 5) with REM Sleep (stage 6)."
     
     prompt = f"""You are MedGemma, an advanced clinical reasoning AI model.
 Review the following patient clinical chart:
@@ -696,11 +713,29 @@ async def generate_medgemma_nudge(insights: Any, patient_name: str = "Ranjit", i
     except Exception as e:
         pathways_str = "- 'level_7_wellness_maintenance': Default stable pathway."
 
+    import zoneinfo
+    pt_tz_str = "UTC"
+    if patient_id:
+        try:
+            from app.services.insights.data_fetcher import supabase
+            p_res = supabase.table("patients").select("timezone").eq("id", patient_id).execute()
+            if p_res.data and p_res.data[0].get("timezone"):
+                pt_tz_str = p_res.data[0]["timezone"]
+        except Exception:
+            pass
+    try:
+        user_tz = zoneinfo.ZoneInfo(pt_tz_str)
+    except Exception:
+        user_tz = timezone.utc
+    local_now = datetime.now(user_tz)
+    local_time_header = f"Current Local Date & Time: {local_now.strftime('%A, %B %d, %Y (%I:%M %p)')} [{pt_tz_str}]"
+
     pref_lang = get_patient_language(patient_id)
 
     prompt = f"""You are MedGemma, a world-class empathetic clinical AI assistant. Your role is to translate complex health data anomalies into clear, actionable, and comforting insights for an elderly user or their caregiver. You must never induce panic, but you must not dilute genuine health concerns.
 
 CONTEXT:
+{local_time_header}
 {mode_instruction}, {patient_name}:
 {insights_text}
 
@@ -720,9 +755,20 @@ Analyze the provided health insights and generate a structured JSON response.
    - Goal: Synthesize the data into a holistic clinical assessment. Bring all the details together.
    - Tone: Warm, reassuring, and extremely simple (8th-grade reading level). No dense medical jargon. {digest_instruction}
    - Clinical Boundary: Clearly explain *why* the data is flagged as a concern. You must NOT make a formal medical diagnosis (e.g., DO NOT say "You have Hypertension"). However, you CAN provide a clinical assessment of what these patterns potentially indicate or lead to (e.g., "These signs can be closely linked with hypertension or sleep apnea").
-   - Temporal Accuracy: All daily vitals provided reflect TODAY's telemetry. ALWAYS refer to them as "today" (NEVER "yesterday").
+   - Temporal Accuracy:
+     * Ground all statements strictly in the dates and times provided in the insights and telemetry.
+     * For overnight sleep ending this morning, refer to it naturally as "Last night's sleep" (or "कल रात की नींद" in Hindi).
+     * For daytime metrics recorded on the current calendar day, refer to them as "Today" or "This morning/afternoon".
+     * If an insight refers to an earlier date (e.g., "on 2026-09-16"), frame it accurately as a follow-up or persistent trend (e.g., "Following up on sleep patterns noted earlier this week..."). NEVER claim an earlier day's event happened "today".
+     * If sleep telemetry for last night is missing or unrecorded, clearly acknowledge that no sleep was tracked for last night rather than inventing a sleep session.
    - Exertional Heart Rate: Do NOT panic the user or advise urgent care if heart rate elevation occurred during an active day of walking. Walking and exercise naturally raise heart rate in healthy ways.
    - Chronic vs Acute Separation: NEVER combine non-acute historical lab findings with acute daytime exertion to falsely claim a multi-organ emergency.
+   - Sleep Architecture & Terminology Grounding:
+     * Standard Device Mapping: sleep_stage_4 = Light/Core Sleep, sleep_stage_5 = Deep Sleep / Slow-Wave Sleep (Stage N3, delta brain waves, physical restoration), sleep_stage_6 = REM Sleep (Rapid Eye Movement, dreaming, paradoxical sleep).
+     * NEVER confuse Deep Sleep (stage 5) with REM sleep (stage 6).
+     * NEVER describe REM sleep as "deep sleep" or "the deepest stage of sleep". REM is paradoxical dream sleep; Stage 5 is restorative slow-wave deep sleep.
+     * If sleep_stage_5 is anomalous, name it "Deep Sleep" or "Deep Sleep Duration".
+     * If sleep_stage_6 is anomalous, name it "REM Sleep" or "REM Sleep Duration".
 
 4. WHY FLAGGED ("why_flagged"):
    Structure a detailed breakdown of the correlated vitals.
@@ -730,7 +776,7 @@ Analyze the provided health insights and generate a structured JSON response.
    - "primary_vitals": Array of objects for the MAJOR acute triggers.
    - "supporting_vitals": Array of objects for historical/supporting factors exacerbating the risk.
    - For each vital object, provide:
-     - "name": Human-friendly name (e.g., "Oxygen dipped").
+     - "name": Human-friendly name (e.g., "Deep Sleep Duration" for sleep_stage_5, "REM Sleep Duration" for sleep_stage_6, "Resting Heart Rate", "Oxygen dipped").
      - "description": What happened (e.g., "Fell below 90% each night").
      - "value": Current anomalous value (e.g., "88%").
      - "usual": Normal baseline (e.g., "96.1%"). Max 1 decimal place. Use strict numbers, no vague phrases.

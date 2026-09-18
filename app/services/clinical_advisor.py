@@ -111,7 +111,7 @@ def fetch_nudge_clinical_context(nudge_id: str, client: Optional[Client] = None)
     if patient_id:
         try:
             vit_res = sb.table("vitals_daily") \
-                .select("date, avg_heart_rate, min_heart_rate, max_heart_rate, hr_avg_morning, hr_avg_afternoon, hr_avg_evening, hr_avg_night, resting_heart_rate_calculated, oxygen_sat_avg, respiratory_rate_avg, total_steps, sleep_hours, waso_mins, awakenings_count, awakenings_count_greater_than_5mins, sleep_stage_1_hours, sleep_stage_4_hours, sleep_stage_6_hours, sleep_stage_6_pct") \
+                .select("date, avg_heart_rate, min_heart_rate, max_heart_rate, hr_avg_morning, hr_avg_afternoon, hr_avg_evening, hr_avg_night, resting_heart_rate_calculated, oxygen_sat_avg, respiratory_rate_avg, total_steps, sleep_hours, waso_mins, awakenings_count, awakenings_count_greater_than_5mins, sleep_stage_1_hours, sleep_stage_4_hours, sleep_stage_5_hours, sleep_stage_5_pct, sleep_stage_6_hours, sleep_stage_6_pct") \
                 .eq("patient_id", patient_id) \
                 .order("date", desc=True) \
                 .limit(7) \
@@ -121,13 +121,26 @@ def fetch_nudge_clinical_context(nudge_id: str, client: Optional[Client] = None)
         except Exception as e:
             print(f"[ClinicalAdvisor] Error fetching vitals_daily: {e}")
 
+    # 6. Temporal & Telemetry Verification Check
+    temporal_telemetry_check = "Telemetry records are consistent."
+    nudge_created = str(nudge.get("created_at") or "")[:10]
+    nudge_title_lower = (nudge.get("nudge_title") or "").lower()
+    if "sleep" in nudge_title_lower:
+        matching_daily = next((v for v in vitals_recent if str(v.get("date"))[:10] == nudge_created), None)
+        if matching_daily:
+            if matching_daily.get("sleep_hours") is None:
+                temporal_telemetry_check = f"TEMPORAL MISMATCH DETECTED: The alert was generated on {nudge_created} claiming sleep disturbances, but vitals_daily for {nudge_created} has sleep_hours = None (no sleep was recorded for that night). The alert recycled historical sleep telemetry from an earlier date."
+        else:
+            temporal_telemetry_check = f"NO TELEMETRY RECORDED: vitals_daily has no entry for date {nudge_created}."
+
     return {
         "nudge": nudge,
         "patient": patient,
         "calculated_age": age,
         "insights": insights,
         "conditions": conditions,
-        "vitals_recent": vitals_recent
+        "vitals_recent": vitals_recent,
+        "temporal_telemetry_check": temporal_telemetry_check
     }
 
 
@@ -138,6 +151,7 @@ def build_clinical_advisor_prompt(context: Dict[str, Any]) -> str:
     nudge = context["nudge"]
     patient = context["patient"]
     age = context["calculated_age"]
+    temporal_check = context.get("temporal_telemetry_check", "Telemetry records are consistent.")
     gender = patient.get("gender", "Unspecified")
     patient_name = patient.get("full_name", "Unknown Patient")
     location = patient.get("location_city") or "India"
@@ -209,6 +223,9 @@ Recent Active Insights (Rules Engine):
 Recent Daily Vitals Trends (Past Days):
 {vitals_str}
 
+Telemetry Integrity & Temporal Consistency Check:
+{temporal_check}
+
 ==================== YOUR MANDATE ====================
 Perform an uncompromising, thorough, expert clinical audit of this nudge as a senior medical doctor.
 You must return your output strictly in JSON format with exactly the following keys:
@@ -217,9 +234,9 @@ You must return your output strictly in JSON format with exactly the following k
   "nudge_id": "{nudge.get('id')}",
   "patient_name": "{patient_name} (Age: {age if age is not None else 'N/A'}, {gender})",
   "nudge_title": "{nudge.get('nudge_title')}",
-  "why_was_this_nudge_created": "Full, forensic root-cause analysis. Explain the exact biometric variables, baseline deviations, standard deviations (z-scores), circadian timing, and whether sensor artifact (motion, loose fit) vs true physiological shift is at play.",
-  "was_it_clinically_sound": "In-depth medical explanation. If clinically sound, explain the physiological and pathological validity (e.g. cardiac strain, arrhythmia risk, silent ischemia, autonomic neuropathy, nocturnal desaturation, sleep disruption). If NOT sound, explain why it is premature, clinically trivial, over-sensitive, or misattributed.",
-  "confidence_score": "Confidence score from 0% to 100% (e.g. '88%') followed by 2-3 sentences of clinical justification based on signal concordance, statistical magnitude, and physiological plausibility.",
+  "why_was_this_nudge_created": "Full, forensic root-cause analysis. Explain the exact biometric variables, baseline deviations, standard deviations (z-scores), circadian timing, whether sensor artifact vs true physiological shift is at play, explicitly address whether the telemetry matches the alert date, and verify sleep stage mappings (Health Connect standard: sleep_stage_4 = Light/Core Sleep, sleep_stage_5 = Deep Sleep N3, sleep_stage_6 = REM Sleep).",
+  "was_it_clinically_sound": "In-depth medical explanation. If clinically sound, explain the physiological and pathological validity. If NOT sound (or if a TEMPORAL MISMATCH occurred, or if sleep stages were mislabeled such as labeling stage 5 as REM or oxymoronically calling REM 'deepest stage of sleep'), explicitly call this out, explain the erosion of caregiver trust, and detail why this heuristic failed.",
+  "confidence_score": "Confidence score from 0% to 100% (e.g. '88%') followed by 2-3 sentences of clinical justification based on signal concordance, statistical magnitude, and physiological plausibility (deduct score if temporal mismatch is present).",
   "action_steps_critical_analysis": {{
     "was_it_best_action": "Yes / No / Partially. Explicitly state whether the attached CTA was appropriate or mismatched.",
     "critique": "Detailed critical critique of the generated action_steps. (e.g. If the system advised booking physiotherapy or dietary consultation for sleep disturbance or tachycardia, call this out directly as clinically inappropriate and explain why).",
