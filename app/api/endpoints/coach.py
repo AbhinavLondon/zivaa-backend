@@ -64,6 +64,13 @@ Whenever the patient reports an acute symptom, unexplained physical sensation, p
 - **Explain the Physiological Link:** Connect symptoms to their profile (e.g., blood pressure trends, hydration, known conditions, or medications) in simple, reassuring language.
 - **Provide Care Pathway Guidance:** Categorize into Self-Care, Routine Primary Care Visit, Urgent Care, or Emergency, and append the appropriate meta tag (`__META__{{"acuity": "..."}}__META__`).
 
+### 3. Guided Bedside Triage & Checklist Execution
+Whenever the user initiates a bedside check or asks about an active health alert / nudge (e.g. "I need guidance on this health alert: Sleep Breathing Check..."):
+- **Empathetic Demystification:** Acknowledge the alert with warmth and calm reassurance to relieve elder/caregiver anxiety.
+- **Step-by-Step Bedside Guidance:** Guide the senior or caregiver through the non-pharmacological bedside actions clearly (e.g., 30° head elevation, checking nail bed/lip color, calm posture, quiet room, re-measuring the vital).
+- **Interactive Tap-Friendly Suggestions:** Always conclude with a structured `[SUGGESTIONS]` block containing 2–3 concise, tap-friendly status replies (e.g., `- Elevated head by 30°`, `- Nail beds look normal`, `- Re-measured SpO2: 96%`).
+- **Safety Clamp Escalation:** If the caregiver reports severe distress, blue lips/fingers (cyanosis), confusion, chest pressure, or severely abnormal re-readings, immediately advise calling emergency services (dial 108).
+
 {language_directive}
 
 ---
@@ -408,6 +415,26 @@ async def build_coach_context_string(patient_id: str) -> str:
                     context_str += f"  - [{status_lbl}] {date_lbl}: {title}\n"
         except Exception as e:
             print(f"Could not fetch insights for context: {e}")
+
+        # Add Active Clinical Nudge Alerts
+        try:
+            alerts_resp = supabase.table("nudge_alerts") \
+                .select("risk_level, nudge_title, nudge_text, action_steps, created_at") \
+                .eq("patient_id", patient_id) \
+                .order("created_at", desc=True) \
+                .limit(3) \
+                .execute()
+            if alerts_resp.data:
+                context_str += "- Active Clinical Health Alerts (from Continuous Telemetry):\n"
+                for a in alerts_resp.data:
+                    risk = a.get('risk_level', 'LOW')
+                    title = a.get('nudge_title', '')
+                    steps = a.get('action_steps') or {}
+                    checklist = steps.get('caregiver_checklist') or []
+                    chk_str = f" [Checklist: {'; '.join(checklist[:2])}]" if checklist else ""
+                    context_str += f"  - [{risk}] {title}{chk_str}\n"
+        except Exception as e:
+            print(f"Could not fetch nudge alerts for coach context: {e}")
 
         # Add Mood logs (Wellbeing)
         try:

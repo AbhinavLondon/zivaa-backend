@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, status, UploadFile, File, Form, Body, Request, BackgroundTasks
 from typing import Dict, Any, Optional
 from datetime import datetime
-from app.services.medgemma_services import parse_lab_report_to_fhir
+from app.services.medgemma_services import parse_lab_report_to_fhir, parse_prescription_to_json
 from app.services.tripwire import run_tripwire_evaluation
 from app.services.notification_templates import dispatch_notification, NotificationType
 from supabase import create_client
@@ -355,3 +355,158 @@ async def update_report_date(report_id: str, request: Request, background_tasks:
         return {"status": "success", "message": "Date updated successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/Prescription/upload", status_code=status.HTTP_202_ACCEPTED)
+async def upload_prescription_file(
+    request: Request,
+    background_tasks: BackgroundTasks
+):
+    patient_id = request.query_params.get("patient_id")
+    form = await request.form()
+    if not patient_id:
+        patient_id = form.get("patient_id")
+        
+    if not patient_id:
+        raise HTTPException(status_code=400, detail="patient_id is required either as a query parameter or form field.")
+        
+    file = None
+    for key, value in form.multi_items():
+        if hasattr(value, "filename") and getattr(value, "filename"):
+            file = value
+            break
+            
+    if not file:
+        raise HTTPException(status_code=400, detail="No file uploaded. Please provide a file.")
+
+    try:
+        file_bytes = await file.read()
+        mime_type = file.content_type
+        
+        # We need to process this and save to patient_documents, patient_medications, etc.
+        background_tasks.add_task(
+            _process_and_ingest_prescription,
+            patient_id=patient_id,
+            file_bytes=file_bytes,
+            mime_type=mime_type,
+            filename=file.filename
+        )
+        
+        return {
+            "status": "processing",
+            "message": "Prescription processing started."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to read uploaded file.")
+
+import uuid
+async def _process_and_ingest_prescription(patient_id: str, file_bytes: bytes, mime_type: str, filename: str):
+    import base64
+    # 1. Upload to Supabase Storage
+    bucket_name = "health_documents"
+    file_id = str(uuid.uuid4())
+    file_ext = filename.split('.')[-1] if '.' in filename else 'pdf'
+    storage_path = f"{patient_id}/{file_id}.{file_ext}"
+    
+    try:
+        # Check if bucket exists, if not, this might fail, but let's assume it exists or we handle it
+        supabase.storage.from_(bucket_name).upload(storage_path, file_bytes, {"content-type": mime_type})
+        public_url = supabase.storage.from_(bucket_name).get_public_url(storage_path)
+    except Exception as e:
+        print(f"Storage upload failed: {e}")
+        public_url = ""
+
+    # 2. Extract JSON via Gemini
+    try:
+        parsed_data = await parse_prescription_to_json(file_bytes, mime_type)
+        if not parsed_data:
+            print("Failed to parse prescription.")
+            return
+            
+        # 3. Store in patient_documents
+        doc_record = {
+            "id": file_id,
+            "patient_id": patient_id,
+            "document_type": "Prescription",
+            "file_url": public_url,
+            "extracted_data": parsed_data
+        }
+        try:
+            supabase.table("patient_documents").insert(doc_record).execute()
+        except Exception as e:
+            print(f"Could not insert into patient_documents: {e}")
+            
+        # 4. Route to existing tables
+        # patient_medications
+        meds = parsed_data.get("medications", [])
+        for m in meds:
+            supabase.table("patient_medications").insert({
+                "patient_id": patient_id,
+                "name": m.get("name", "Unknown"),
+                "dose": m.get("strength", ""),
+                "frequency": m.get("schedule", ""),
+                "status": "Active"
+            }).execute()
+            
+        # care_plan_actions (exercises, labs, followups, vitals)
+        actions = []
+        exercises = parsed_data.get("exercises", [])
+        for ex in exercises:
+            actions.append({
+                "patient_id": patient_id,
+                "description": f"Exercise: {ex.get('name')}",
+                "status": "Suggested",
+                "action_type": "Movement",
+                "cadence": "Daily",
+                "action_metadata": {"source": "prescription", "details": ex.get("sets_reps_duration", "")}
+            })
+            
+        labs = parsed_data.get("lab_orders", [])
+        for lb in labs:
+            actions.append({
+                "patient_id": patient_id,
+                "description": f"Lab Test: {lb.get('test_name')}",
+                "status": "Suggested",
+                "action_type": "Clinical",
+                "cadence": "Once",
+                "action_metadata": {"source": "prescription", "timeframe": lb.get("timeframe", "")}
+            })
+            
+        follow_up = parsed_data.get("follow_up")
+        if follow_up:
+            actions.append({
+                "patient_id": patient_id,
+                "description": f"Follow-up Appointment",
+                "status": "Suggested",
+                "action_type": "Clinical",
+                "cadence": "Once",
+                "action_metadata": {"source": "prescription", "details": follow_up}
+            })
+            
+        vitals = parsed_data.get("vitals_monitoring", [])
+        for v in vitals:
+            actions.append({
+                "patient_id": patient_id,
+                "description": f"Monitor Vital: {v.get('vital')}",
+                "status": "Suggested",
+                "action_type": "Clinical",
+                "cadence": "Daily",
+                "action_metadata": {"source": "prescription", "frequency": v.get("frequency", "")}
+            })
+            
+        if actions:
+            # We insert one by one or batch. Batch is safer if table supports it.
+            supabase.table("care_plan_actions").insert(actions).execute()
+            
+        # patient_preferences (lifestyle/diet)
+        lifestyles = parsed_data.get("lifestyle_diet", [])
+        if lifestyles:
+            supabase.table("patient_preferences").insert({
+                "patient_id": patient_id,
+                "domain": "Clinical",
+                "constraint_text": "; ".join(lifestyles)
+            }).execute()
+            
+    except Exception as e:
+        print(f"Error processing prescription: {e}")
+

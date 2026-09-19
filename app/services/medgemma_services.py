@@ -1,3 +1,4 @@
+import asyncio
 import json
 import httpx
 from typing import Dict, Any, List, Optional
@@ -706,12 +707,15 @@ async def generate_medgemma_nudge(insights: Any, patient_name: str = "Ranjit", i
     pathways_str = ""
     try:
         pathways_file = os.path.join(os.path.dirname(__file__), "insights", "care_pathways.json")
-        with open(pathways_file, "r") as f:
-            pathways_data = json.load(f).get("care_pathways", {})
+        with open(pathways_file, "r", encoding="utf-8") as f:
+            catalog = json.load(f)
+            pathways_data = catalog.get("pathways", catalog.get("care_pathways", {}))
             for key, val in pathways_data.items():
-                pathways_str += f"- '{key}': {val.get('definition_for_llm', '')}\n"
+                levels = list(val.get("escalation_levels", {}).keys())
+                levels_str = f" (Levels: {', '.join(levels)})" if levels else ""
+                pathways_str += f"- Domain '{key}': {val.get('clinical_definition', val.get('definition_for_llm', ''))}{levels_str}\n"
     except Exception as e:
-        pathways_str = "- 'level_7_wellness_maintenance': Default stable pathway."
+        pathways_str = "- Domain 'wellness_vitality_reinforcement': Default stable pathway. (Levels: level_1_bedside_triage, level_2_diagnostic_investigation, level_3_acute_emergency)\n"
 
     import zoneinfo
     pt_tz_str = "UTC"
@@ -787,8 +791,12 @@ Analyze the provided health insights and generate a structured JSON response.
    - "title": Short headline.
    - "title_emphasis": Short italicized part of title.
    - "description": Clear, non-clinical explanation of the next step.
-   - "selected_pathway": You MUST select the exact key from the pathways catalog below that best fits the triage need:
+   - "selected_domain": You MUST select the exact clinical domain key from the 8 Clinical Domains below that matches the primary physiological issue:
 {pathways_str}
+   - "escalation_level": Select the appropriate escalation tier:
+     * 'level_1_bedside_triage': Early signal, mild deviation, home monitoring, or lifestyle adjustment.
+     * 'level_2_diagnostic_investigation': Sustained deviation, subacute trend, order at-home labs or diagnostic tests.
+     * 'level_3_acute_emergency': Life-threatening vital breach or acute medical emergency requiring immediate transfer.
 
 6. {get_proactive_language_directive(pref_lang, content_type="nudge")}
 
@@ -839,7 +847,8 @@ Return ONLY valid JSON. No markdown backticks, no conversational filler, no reas
                     "title": {"type": "STRING"},
                     "title_emphasis": {"type": "STRING"},
                     "description": {"type": "STRING"},
-                    "selected_pathway": {"type": "STRING"}
+                    "selected_domain": {"type": "STRING"},
+                    "escalation_level": {"type": "STRING"}
                 }
             }
         }
@@ -855,7 +864,11 @@ Return ONLY valid JSON. No markdown backticks, no conversational filler, no reas
         try:
             from app.services.insights.cta_resolver import resolve_ctas
             raw_action_steps = parsed.get("action_steps", {})
-            resolved_action_steps = resolve_ctas(raw_action_steps, parsed.get("risk_level", "LOW")) if isinstance(raw_action_steps, dict) else resolve_ctas({"description": str(raw_action_steps)}, parsed.get("risk_level", "LOW"))
+            resolved_action_steps = resolve_ctas(
+                raw_action_steps if isinstance(raw_action_steps, dict) else {"description": str(raw_action_steps)},
+                risk_level=parsed.get("risk_level", "LOW"),
+                patient_id=patient_id
+            )
             parsed["action_steps"] = resolved_action_steps
         except Exception as e:
             print(f"Failed to resolve CTAs: {e}")
@@ -2173,3 +2186,88 @@ async def generate_latenight_checkin(patient_name: str, recent_sleep_hours: list
         return f"We noticed you haven't been getting enough rest over the last week. Your body repairs itself during deep sleep—let's prioritize getting to bed on time tonight to break the cycle."
     else:
         return f"It's getting late. Maintaining your great sleep routine is key to your longevity. Time to wind down."
+
+
+async def parse_prescription_to_json(file_bytes: bytes, mime_type: str) -> dict:
+    import base64
+    import json
+    
+    encoded_file = base64.b64encode(file_bytes).decode('utf-8')
+    file_part = {
+        'inlineData': {
+            'mimeType': mime_type,
+            'data': encoded_file
+        }
+    }
+    
+    extraction_schema = {
+        'type': 'OBJECT',
+        'properties': {
+            'doctor_name': {'type': 'STRING'},
+            'visit_date': {'type': 'STRING'},
+            'medications': {
+                'type': 'ARRAY',
+                'items': {
+                    'type': 'OBJECT',
+                    'properties': {
+                        'name': {'type': 'STRING'},
+                        'strength': {'type': 'STRING'},
+                        'schedule': {'type': 'STRING'},
+                        'notes': {'type': 'STRING'}
+                    }
+                }
+            },
+            'exercises': {
+                'type': 'ARRAY',
+                'items': {
+                    'type': 'OBJECT',
+                    'properties': {
+                        'name': {'type': 'STRING'},
+                        'sets_reps_duration': {'type': 'STRING'}
+                    }
+                }
+            },
+            'lifestyle_diet': {
+                'type': 'ARRAY',
+                'items': {'type': 'STRING'}
+            },
+            'lab_orders': {
+                'type': 'ARRAY',
+                'items': {
+                    'type': 'OBJECT',
+                    'properties': {
+                        'test_name': {'type': 'STRING'},
+                        'timeframe': {'type': 'STRING'}
+                    }
+                }
+            },
+            'follow_up': {
+                'type': 'STRING'
+            },
+            'vitals_monitoring': {
+                'type': 'ARRAY',
+                'items': {
+                    'type': 'OBJECT',
+                    'properties': {
+                        'vital': {'type': 'STRING'},
+                        'frequency': {'type': 'STRING'}
+                    }
+                }
+            }
+        }
+    }
+    
+    prompt = """You are an expert clinical data extraction AI.
+    Your task is to extract the attached prescription/doctor's note and output the data precisely according to the JSON schema provided.
+    Ensure you thoroughly capture any medications, physiotherapy/exercises, diet/lifestyle constraints, lab test orders, follow-up appointments, and vitals monitoring directives.
+    Leave arrays empty if none are found in that category.
+    """
+    
+    response_text = await _call_medgemma(
+        prompt,
+        file_part=file_part,
+        json_mode=True,
+        response_schema=extraction_schema
+    )
+    
+    return _clean_json(response_text)

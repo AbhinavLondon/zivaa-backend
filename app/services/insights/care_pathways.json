@@ -1,39 +1,525 @@
 {
-  "care_pathways": {
+  "pathways": {
+    "occult_infection_sepsis": {
+      "display_name": "Infection & Sepsis Surveillance",
+      "clinical_definition": "Select if the patient exhibits subtle temperature shifts (skin temp delta > +0.8\u00b0C), resting tachycardia exceeding Liebermeister's rule (+8.5 bpm/\u00b0C), nocturnal cough spikes, or acute mobility slowdown indicating an occult infection (UTI, aspiration pneumonia, or tropical fevers).",
+      "escalation_levels": {
+        "level_1_bedside_triage": {
+          "definition": "Early or mild temperature/heart rate deviation without acute distress. Focus on oral temperature check, hydration, and confusion screening.",
+          "caregiver_checklist": [
+            "Check oral temperature using a digital thermometer under the tongue for 60 seconds",
+            "Offer 250ml of warm water or oral rehydration solution (ORS)",
+            "Ask 2 simple orientation questions: 'Do you know what day of the week it is?' and 'Where are we right now?'"
+          ],
+          "primary_cta": {
+            "label": "Start Guided Infection Check",
+            "action": "START_GUIDED_TRIAGE",
+            "icon": "chat"
+          },
+          "secondary_cta": {
+            "label": "Ask Coach a Question",
+            "action": "START_COACH_CHAT",
+            "icon": "message-circle"
+          }
+        },
+        "level_2_diagnostic_investigation": {
+          "definition": "Confirmed fever, sustained resting tachycardia (>15 bpm over baseline), or symptoms persisting >48h. Requires stat home phlebotomy and urine tests.",
+          "caregiver_checklist": [
+            "Keep patient seated in a well-ventilated room and monitor respiratory comfort",
+            "Inspect urine sample for cloudiness or foul odor if possible",
+            "Prepare patient for home phlebotomist visit (keep health records handy)"
+          ],
+          "primary_cta": {
+            "label": "Book Home CBC & Urine Test",
+            "action": "ORDER_HOME_LABS",
+            "lab_panel": "CBC_ESR_CRP_URINE_ROUTINE",
+            "icon": "flask"
+          },
+          "secondary_cta": {
+            "label": "Share Vitals with Family Doctor",
+            "action": "SHARE_CLINICAL_SUMMARY",
+            "icon": "share-2"
+          }
+        },
+        "level_3_acute_emergency": {
+          "definition": "High fever with altered mental status, severe breathlessness, rigors, or signs of septic shock. Immediate emergency transfer required.",
+          "caregiver_checklist": [
+            "Call emergency ambulance immediately and inform building security/attendant",
+            "Do not give solid food or oral medications if patient is disoriented",
+            "Keep patient lying on their side (recovery position) if drowsy to prevent aspiration"
+          ],
+          "primary_cta": {
+            "label": "Call Ambulance / Casualty (108)",
+            "action": "CALL_AMBULANCE",
+            "icon": "alert-triangle"
+          },
+          "secondary_cta": {
+            "label": "Call Primary Caregiver",
+            "action": "CALL_CAREGIVER",
+            "icon": "phone"
+          }
+        }
+      }
+    },
+    "respiratory_hypoxemia_osa": {
+      "display_name": "Respiratory & Nocturnal Hypoxemia (OSA)",
+      "clinical_definition": "Select if the patient shows nocturnal SpO2 desaturations (<92%), frequent acoustic snoring events, tachypnea (>20 RPM), or daytime lethargy suggestive of Obstructive Sleep Apnea or cardiopulmonary strain.",
+      "escalation_levels": {
+        "level_1_bedside_triage": {
+          "definition": "Borderline nocturnal SpO2 dips (92-94%) or occasional snoring. Focus on head-of-bed elevation, sleeping posture, and spot checking.",
+          "caregiver_checklist": [
+            "Elevate the head of the bed by 30 degrees using an extra pillow to open airways",
+            "Ensure the patient avoids sleeping flat on their back (encourage side-sleeping)",
+            "Perform a daytime spot-check with a fingertip pulse oximeter while seated"
+          ],
+          "primary_cta": {
+            "label": "Start Guided Respiratory Check",
+            "action": "START_GUIDED_TRIAGE",
+            "icon": "chat"
+          },
+          "secondary_cta": {
+            "label": "Ask Coach a Question",
+            "action": "START_COACH_CHAT",
+            "icon": "message-circle"
+          }
+        },
+        "level_2_diagnostic_investigation": {
+          "definition": "Sustained nighttime hypoxemia (SpO2 nadir <92% across multiple nights) with acoustic snoring. Requires Home Sleep Apnea Test (HSAT).",
+          "caregiver_checklist": [
+            "Check for morning headaches, dry mouth, or excessive daytime sleepiness",
+            "Observe if patient has pauses in breathing or gasping episodes during sleep",
+            "Schedule a Home Sleep Apnea Study device delivery to the patient's doorstep"
+          ],
+          "primary_cta": {
+            "label": "Book Home Sleep Apnea Test (HSAT)",
+            "action": "BOOK_HOME_SLEEP_STUDY",
+            "icon": "activity"
+          },
+          "secondary_cta": {
+            "label": "Consult Pulmonologist Online",
+            "action": "BOOK_SPECIALIST_TELEHEALTH",
+            "specialist": "PULMONOLOGIST",
+            "icon": "video"
+          }
+        },
+        "level_3_acute_emergency": {
+          "definition": "Severe hypoxemia (SpO2 <88% during day or sustained), severe respiratory distress, stridor, or cyanosis. Immediate emergency intervention.",
+          "caregiver_checklist": [
+            "Seat patient upright immediately in a chair or high-Fowler position",
+            "Administer prescribed emergency home oxygen if available (2 L/min via nasal cannula)",
+            "Call 108 ambulance or transport to nearest hospital emergency room immediately"
+          ],
+          "primary_cta": {
+            "label": "Call Emergency Services (108)",
+            "action": "CALL_AMBULANCE",
+            "icon": "alert-triangle"
+          },
+          "secondary_cta": {
+            "label": "Call Primary Caregiver",
+            "action": "CALL_CAREGIVER",
+            "icon": "phone"
+          }
+        }
+      }
+    },
+    "cardiorenal_fluid_balance": {
+      "display_name": "Cardiorenal & Fluid Retention",
+      "clinical_definition": "Select if the patient shows rapid weight gain (>1.5 kg in 3 days), loss of nocturnal HR dipping, frequent awakenings/nocturia, or lab indicators of worsening eGFR/creatinine.",
+      "escalation_levels": {
+        "level_1_bedside_triage": {
+          "definition": "Mild fluid drift or minor weight fluctuation. Focus on morning weigh-ins, ankle checks, and sodium tracking.",
+          "caregiver_checklist": [
+            "Weigh senior first thing in the morning after voiding, before breakfast",
+            "Check both ankles and shins by gently pressing for 5 seconds to test for pitting edema",
+            "Review dietary sodium and fluid intake from the past 24 hours"
+          ],
+          "primary_cta": {
+            "label": "Start Guided Fluid Check",
+            "action": "START_GUIDED_TRIAGE",
+            "icon": "chat"
+          },
+          "secondary_cta": {
+            "label": "Ask Coach a Question",
+            "action": "START_COACH_CHAT",
+            "icon": "message-circle"
+          }
+        },
+        "level_2_diagnostic_investigation": {
+          "definition": "Confirmed weight gain (>1.5 kg in 3 days) or laboratory decline in eGFR/kidney function. Requires stat renal & electrolyte panel.",
+          "caregiver_checklist": [
+            "Measure sitting and standing blood pressure to check for orthostatic changes",
+            "Note current doses of ACE inhibitors, ARBs (e.g. Telmisartan), and diuretics (e.g. Torsemide)",
+            "Keep patient hydrated while awaiting home lab blood collection"
+          ],
+          "primary_cta": {
+            "label": "Order Home Kidney & Electrolyte Labs",
+            "action": "ORDER_HOME_LABS",
+            "lab_panel": "KIDNEY_ELECTROLYTES_PANEL",
+            "icon": "flask"
+          },
+          "secondary_cta": {
+            "label": "Book Nephrologist / Physician Review",
+            "action": "BOOK_SPECIALIST_TELEHEALTH",
+            "specialist": "NEPHROLOGIST",
+            "icon": "calendar"
+          }
+        },
+        "level_3_acute_emergency": {
+          "definition": "Acute congestive decompensation, severe shortness of breath when lying flat (orthopnea), frothy sputum, or hypertensive crisis. Immediate transfer required.",
+          "caregiver_checklist": [
+            "Sit patient completely upright with legs hanging over the side of the bed to reduce venous return",
+            "Do NOT administer extra fluids",
+            "Call 108 ambulance or rush to nearest emergency casualty"
+          ],
+          "primary_cta": {
+            "label": "Call Ambulance / Casualty (108)",
+            "action": "CALL_AMBULANCE",
+            "icon": "alert-triangle"
+          },
+          "secondary_cta": {
+            "label": "Call Primary Caregiver",
+            "action": "CALL_CAREGIVER",
+            "icon": "phone"
+          }
+        }
+      }
+    },
+    "sarcopenia_fall_prevention": {
+      "display_name": "Sarcopenia, Cadence & Fall Prevention",
+      "clinical_definition": "Select if the patient shows cautious shuffling cadence (<60 spm), prolonged sit-to-stand transitions (>15s), severe sleep debt with high step counts, or sudden mobility collapse.",
+      "escalation_levels": {
+        "level_1_bedside_triage": {
+          "definition": "Mild gait slowing or temporary fatigue after poor sleep. Focus on home environmental hazard removal and assistive footwear.",
+          "caregiver_checklist": [
+            "Clear all walking paths: secure loose carpets, dhurries, and electrical cords",
+            "Verify that bathroom and hallway nightlights are turned on and functioning",
+            "Ensure the senior wears non-skid, supportive footwear inside the house (no bare socks)"
+          ],
+          "primary_cta": {
+            "label": "Start Guided Fall Safety Audit",
+            "action": "START_GUIDED_TRIAGE",
+            "icon": "chat"
+          },
+          "secondary_cta": {
+            "label": "Ask Coach a Question",
+            "action": "START_COACH_CHAT",
+            "icon": "message-circle"
+          }
+        },
+        "level_2_diagnostic_investigation": {
+          "definition": "Chronic cadence slowing (<65 spm for 2 weeks), near-falls, or sarcopenic decline. Requires home physiotherapy assessment.",
+          "caregiver_checklist": [
+            "Accompany the senior during all transfers (chair to standing, bed to bathroom)",
+            "Check if knee or hip joint pain is restricting natural walking speed",
+            "Prepare comfortable attire for an at-home physiotherapy balance assessment"
+          ],
+          "primary_cta": {
+            "label": "Book Home Geriatric Physiotherapist",
+            "action": "BOOK_HOME_PHYSIO",
+            "icon": "user-check"
+          },
+          "secondary_cta": {
+            "label": "Order Vitamin D3 & Bone Mineral Labs",
+            "action": "ORDER_HOME_LABS",
+            "lab_panel": "VITAMIN_D_CALCIUM_PANEL",
+            "icon": "flask"
+          }
+        },
+        "level_3_acute_emergency": {
+          "definition": "Suspected fall, sudden inability to bear weight, severe hip/back pain, or head impact. Immediate emergency triage.",
+          "caregiver_checklist": [
+            "Do NOT attempt to abruptly lift or pull the senior up if they report severe pain",
+            "Check for head injury, cuts, limb rotation, or loss of consciousness",
+            "Keep patient warm with a light blanket and call emergency medical support"
+          ],
+          "primary_cta": {
+            "label": "Call Emergency Assistance (108)",
+            "action": "CALL_AMBULANCE",
+            "icon": "alert-triangle"
+          },
+          "secondary_cta": {
+            "label": "Call Primary Caregiver",
+            "action": "CALL_CAREGIVER",
+            "icon": "phone"
+          }
+        }
+      }
+    },
+    "cardio_autonomic_strain": {
+      "display_name": "Cardiovascular & Autonomic Tone",
+      "clinical_definition": "Select if the patient shows blunted heart rate recovery (<12 bpm at 1 min), reverse nocturnal dipping, widening pulse pressure (>60 mmHg), or blood pressure escalation.",
+      "escalation_levels": {
+        "level_1_bedside_triage": {
+          "definition": "Subtle autonomic drift or mild blood pressure elevation (Stage 1). Focus on orthostatic cautions and relaxation.",
+          "caregiver_checklist": [
+            "Instruct senior to sit on the edge of the bed for 60 seconds before standing up",
+            "Avoid sudden hot showers or large carbohydrate-heavy meals in the morning",
+            "Re-check sitting blood pressure and pulse after 30 minutes of quiet rest"
+          ],
+          "primary_cta": {
+            "label": "Start Guided Cardiac Check",
+            "action": "START_GUIDED_TRIAGE",
+            "icon": "chat"
+          },
+          "secondary_cta": {
+            "label": "Ask Coach a Question",
+            "action": "START_COACH_CHAT",
+            "icon": "message-circle"
+          }
+        },
+        "level_2_diagnostic_investigation": {
+          "definition": "Sustained Stage 2 Hypertension, non-dipping night HR profile, or blunted HR recovery. Requires at-home ECG / Holter and cardiology review.",
+          "caregiver_checklist": [
+            "Log morning and evening blood pressure readings in a structured diary",
+            "Note any episodes of palpitations, lightheadedness, or racing heartbeat",
+            "Schedule an at-home 12-lead ECG technician visit"
+          ],
+          "primary_cta": {
+            "label": "Book At-Home 12-Lead ECG / Holter",
+            "action": "BOOK_HOME_ECG",
+            "icon": "activity"
+          },
+          "secondary_cta": {
+            "label": "Consult Cardiologist Online",
+            "action": "BOOK_SPECIALIST_TELEHEALTH",
+            "specialist": "CARDIOLOGIST",
+            "icon": "video"
+          }
+        },
+        "level_3_acute_emergency": {
+          "definition": "Hypertensive urgency (BP >= 180 mmHg with headache), acute chest pressure, radiation to jaw/left arm, or sudden syncope. Immediate emergency dispatch.",
+          "caregiver_checklist": [
+            "Sit patient in a comfortable position, loosen tight clothing around neck and chest",
+            "Check if patient has prescribed SOS cardiac medications (e.g., Sorbitrate / Aspirin)",
+            "Call 108 ambulance immediately and notify family doctor"
+          ],
+          "primary_cta": {
+            "label": "Call Cardiac Emergency (108)",
+            "action": "CALL_AMBULANCE",
+            "icon": "alert-triangle"
+          },
+          "secondary_cta": {
+            "label": "Call Primary Caregiver",
+            "action": "CALL_CAREGIVER",
+            "icon": "phone"
+          }
+        }
+      }
+    },
+    "sleep_metabolic_dysregulation": {
+      "display_name": "Sleep Architecture & Glycemic Stability",
+      "clinical_definition": "Select if the patient shows deep sleep (Stage 5) depletion (<45 mins) coupled with morning hyperglycemia (>130 mg/dL), high glycemic variability, or RCV-confirmed HbA1c worsening.",
+      "escalation_levels": {
+        "level_1_bedside_triage": {
+          "definition": "Isolated night of poor deep sleep with expected mild morning insulin resistance. Focus on breakfast portion control and post-meal stroll.",
+          "caregiver_checklist": [
+            "Provide a low-glycemic, protein-rich breakfast (e.g. besan chilla, eggs, or sprouted moong)",
+            "Encourage a gentle 15-minute post-breakfast walk to facilitate muscle glucose uptake",
+            "Verify blood sugar 2 hours post-meal with a home glucometer"
+          ],
+          "primary_cta": {
+            "label": "Start Guided Glucose & Diet Check",
+            "action": "START_GUIDED_TRIAGE",
+            "icon": "chat"
+          },
+          "secondary_cta": {
+            "label": "Ask Coach a Question",
+            "action": "START_COACH_CHAT",
+            "icon": "message-circle"
+          }
+        },
+        "level_2_diagnostic_investigation": {
+          "definition": "Frequent morning spikes, postprandial surges (>180 mg/dL), or rising HbA1c trend. Requires comprehensive metabolic lab review.",
+          "caregiver_checklist": [
+            "Record 3-day fasting and post-meal blood sugar levels",
+            "Review medication timings (ensure anti-diabetic medications are taken with meals)",
+            "Schedule home phlebotomist for fasting blood sugar, HbA1c, and lipid panel"
+          ],
+          "primary_cta": {
+            "label": "Order Home HbA1c & Fasting Panel",
+            "action": "ORDER_HOME_LABS",
+            "lab_panel": "DIABETES_HBA1C_LIPID_PANEL",
+            "icon": "flask"
+          },
+          "secondary_cta": {
+            "label": "Consult Diabetes Educator / Doctor",
+            "action": "BOOK_SPECIALIST_TELEHEALTH",
+            "specialist": "ENDOCRINOLOGIST",
+            "icon": "calendar"
+          }
+        },
+        "level_3_acute_emergency": {
+          "definition": "Critical hypoglycemia (<54 mg/dL) with confusion/sweating OR severe hyperglycemia (>250 mg/dL with ketones/vomiting). Immediate emergency protocol.",
+          "caregiver_checklist": [
+            "If blood sugar <70 mg/dL and patient is conscious, immediately give 15g fast-acting sugar (1/2 cup fruit juice, 3-4 glucose tablets, or 3 tsp sugar in water)",
+            "Re-check blood glucose in 15 minutes",
+            "If patient is drowsy, unresponsive, or blood sugar remains critical, call 108 immediately"
+          ],
+          "primary_cta": {
+            "label": "Call Medical Emergency (108)",
+            "action": "CALL_AMBULANCE",
+            "icon": "alert-triangle"
+          },
+          "secondary_cta": {
+            "label": "Call Primary Caregiver",
+            "action": "CALL_CAREGIVER",
+            "icon": "phone"
+          }
+        }
+      }
+    },
+    "geriatric_polypharmacy": {
+      "display_name": "Geriatric Polypharmacy & Drug Safety",
+      "clinical_definition": "Select if the pattern suggests adverse drug events, medication non-adherence, drug-vital interactions (e.g. sudden bradycardia post beta-blocker), or Beers criteria contraindications.",
+      "escalation_levels": {
+        "level_1_bedside_triage": {
+          "definition": "Missed doses or minor scheduling confusion. Focus on pill-box reconciliation and audio reminders.",
+          "caregiver_checklist": [
+            "Check the weekly pill organizer against the latest doctor prescription",
+            "Confirm whether yesterday's evening medications were taken or accidentally skipped",
+            "Ensure medications are kept in a visible, easily accessible location"
+          ],
+          "primary_cta": {
+            "label": "Start Guided Medicine Box Check",
+            "action": "START_GUIDED_TRIAGE",
+            "icon": "chat"
+          },
+          "secondary_cta": {
+            "label": "Ask Coach a Question",
+            "action": "START_COACH_CHAT",
+            "icon": "message-circle"
+          }
+        },
+        "level_2_diagnostic_investigation": {
+          "definition": "Suspected drug interaction, daytime dizziness, anticholinergic confusion, or multiple missed doses. Requires clinical pharmacist / GP review.",
+          "caregiver_checklist": [
+            "Gather all current prescription boxes, syrups, and over-the-counter supplements in one tray",
+            "Document any new symptoms that started after a recent medicine change",
+            "Book a teleconsultation for comprehensive medication deprescribing review"
+          ],
+          "primary_cta": {
+            "label": "Schedule Medication Review",
+            "action": "REVIEW_MEDS",
+            "icon": "clipboard"
+          },
+          "secondary_cta": {
+            "label": "Configure Audio Pill Reminders",
+            "action": "CONFIGURE_MED_REMINDERS",
+            "icon": "bell"
+          }
+        },
+        "level_3_acute_emergency": {
+          "definition": "Acute drug toxicity, severe allergic reaction (anaphylaxis, facial swelling), profound bradycardia (<45 bpm), or collapse following medication. Immediate transfer.",
+          "caregiver_checklist": [
+            "Stop any further medication administration immediately",
+            "Keep the medication packaging ready to hand over to the emergency medical team",
+            "Call 108 ambulance immediately"
+          ],
+          "primary_cta": {
+            "label": "Call Emergency Services (108)",
+            "action": "CALL_AMBULANCE",
+            "icon": "alert-triangle"
+          },
+          "secondary_cta": {
+            "label": "Call Primary Caregiver",
+            "action": "CALL_CAREGIVER",
+            "icon": "phone"
+          }
+        }
+      }
+    },
+    "wellness_vitality_reinforcement": {
+      "display_name": "Wellness Maintenance & Longevity",
+      "clinical_definition": "Select if the patient's vitals are stable, goals are met (e.g. brisk cadence >=85 spm, active hours >=8), or chronic conditions are well-controlled.",
+      "escalation_levels": {
+        "level_1_bedside_triage": {
+          "definition": "All vitals stable and within target range. Reinforce positive habits and longevity milestones.",
+          "caregiver_checklist": [
+            "Commend the senior for maintaining good mobility and regular sleep habits",
+            "Encourage continuing their daily walking and hydration routine",
+            "Review monthly health summary together"
+          ],
+          "primary_cta": {
+            "label": "View Progress Report",
+            "action": "VIEW_MONTHLY_REPORT",
+            "icon": "award"
+          },
+          "secondary_cta": {
+            "label": "Chat with Health Coach",
+            "action": "START_COACH_CHAT",
+            "icon": "message-circle"
+          }
+        },
+        "level_2_diagnostic_investigation": {
+          "definition": "Stable chronic maintenance with upcoming annual preventive wellness checks.",
+          "caregiver_checklist": [
+            "Check if annual routine preventive blood work is due this quarter",
+            "Ensure regular dental and vision checkups are scheduled"
+          ],
+          "primary_cta": {
+            "label": "Book Annual Senior Health Check",
+            "action": "ORDER_PREVENTIVE_CHECKUP",
+            "icon": "calendar"
+          },
+          "secondary_cta": {
+            "label": "View Health Progress",
+            "action": "VIEW_MONTHLY_REPORT",
+            "icon": "award"
+          }
+        },
+        "level_3_acute_emergency": {
+          "definition": "Fallback emergency redirect if an urgent flag unexpectedly co-occurs.",
+          "caregiver_checklist": [
+            "Assess immediate patient comfort and vital responsiveness",
+            "Contact primary family caregiver or physician if new acute symptoms arise",
+            "Prepare emergency contact list and recent health records"
+          ],
+          "primary_cta": {
+            "label": "Call Emergency Services (108)",
+            "action": "CALL_AMBULANCE",
+            "icon": "alert-triangle"
+          },
+          "secondary_cta": {
+            "label": "Call Caregiver",
+            "action": "CALL_CAREGIVER",
+            "icon": "phone"
+          }
+        }
+      }
+    }
+  },
+  "legacy_aliases": {
     "level_1_emergency_dispatch": {
-      "definition_for_llm": "Select ONLY IF the patient exhibits signs of a life-threatening emergency (e.g., suspected stroke, myocardial infarction, severe respiratory distress, unresponsiveness). Requires immediate emergency services.",
-      "primary_cta": {"label": "Call Emergency Services (Ambulance)", "action": "CALL_AMBULANCE", "icon": "alert-triangle"},
-      "secondary_cta": {"label": "Call Primary Caregiver", "action": "CALL_CAREGIVER", "icon": "phone"}
+      "domain": "occult_infection_sepsis",
+      "level": "level_3_acute_emergency"
     },
     "level_2_urgent_triage": {
-      "definition_for_llm": "Select if the patient has a severe deviation in vitals (e.g., hypertensive crisis, acute tachycardia) or acute symptoms (e.g., sudden severe pain, high fever) that is not immediately life-threatening but requires same-day medical intervention.",
-      "primary_cta": {"label": "Connect to 24/7 Telehealth Doctor", "action": "START_TELEHEALTH", "icon": "video"},
-      "secondary_cta": {"label": "Navigate to Urgent Care", "action": "NAVIGATE_URGENT_CARE", "icon": "map-pin"}
+      "domain": "cardio_autonomic_strain",
+      "level": "level_2_diagnostic_investigation"
     },
     "level_3_subacute_clinical_review": {
-      "definition_for_llm": "Select if there is a concerning, sustained trend (e.g., steadily rising blood pressure over a week, unexplained weight gain) that warrants a physician's review within 48-72 hours, but no acute distress is present.",
-      "primary_cta": {"label": "Book Primary Care Appointment", "action": "BOOK_PCP_APPT", "icon": "calendar"},
-      "secondary_cta": {"label": "Order Home Lab Tests", "action": "ORDER_LABS", "icon": "flask"}
+      "domain": "cardiorenal_fluid_balance",
+      "level": "level_2_diagnostic_investigation"
     },
     "level_4_proactive_intervention": {
-      "definition_for_llm": "Select if the patient is experiencing a functional decline, mobility issues, or chronic condition drift (e.g., dropping step count, poor sleep architecture) that requires allied health intervention (physio, diet, mental health) rather than a doctor.",
-      "primary_cta": {"label": "Schedule Physiotherapy Assessment", "action": "BOOK_PHYSIO", "icon": "activity"},
-      "secondary_cta": {"label": "Start Dietary Consultation", "action": "BOOK_DIETICIAN", "icon": "coffee"}
+      "domain": "sarcopenia_fall_prevention",
+      "level": "level_2_diagnostic_investigation"
     },
     "level_5_remote_monitoring_escalation": {
-      "definition_for_llm": "Select if the clinical data is ambiguous, incomplete, or shows a mild, unconfirmed anomaly. The goal is to gather more specific clinical data before making a triage decision. This triggers an interactive Coach Chat to evaluate the patient's symptoms.",
-      "primary_cta": {"label": "Chat with your Health Coach", "action": "START_COACH_CHAT", "icon": "message-circle"},
-      "secondary_cta": {"label": "Take Immediate Spot Vitals", "action": "FORCE_VITALS_SYNC", "icon": "refresh-cw"}
+      "domain": "respiratory_hypoxemia_osa",
+      "level": "level_1_bedside_triage"
     },
     "level_6_medication_reconciliation": {
-      "definition_for_llm": "Select if the pattern strongly suggests medication non-adherence, adverse drug reactions, or if a newly started medication correlates with a sudden change in vitals.",
-      "primary_cta": {"label": "Review Medication Log", "action": "REVIEW_MEDS", "icon": "pill"},
-      "secondary_cta": {"label": "Consult Clinical Pharmacist", "action": "START_COACH_CHAT", "icon": "message-circle"}
+      "domain": "geriatric_polypharmacy",
+      "level": "level_2_diagnostic_investigation"
     },
     "level_7_wellness_maintenance": {
-      "definition_for_llm": "Select if the patient's chronic conditions are well-managed and vitals are stable. Focus on reinforcing positive behaviors and education.",
-      "primary_cta": {"label": "View Progress Report", "action": "VIEW_MONTHLY_REPORT", "icon": "award"},
-      "secondary_cta": {"label": "Read Health Article", "action": "VIEW_EDUCATION", "icon": "book-open"}
+      "domain": "wellness_vitality_reinforcement",
+      "level": "level_1_bedside_triage"
+    },
+    "START_GUIDED_TRIAGE": {
+      "domain": "respiratory_hypoxemia_osa",
+      "level": "level_1_bedside_triage"
     }
   }
 }
