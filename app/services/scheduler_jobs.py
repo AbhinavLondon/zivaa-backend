@@ -318,11 +318,10 @@ async def run_midday_checkins():
                 "insight_type": "MIDDAY_CHECKIN",
                 "insight_text": message
             }
-            existing_res = supabase.table("user_insights").select("id").eq("patient_id", patient_id).eq("insight_date", payload["insight_date"]).eq("insight_type", "MIDDAY_CHECKIN").execute()
-            if existing_res.data:
-                supabase.table("user_insights").update({"insight_text": message}).eq("id", existing_res.data[0]["id"]).execute()
-            else:
-                supabase.table("user_insights").insert(payload).execute()
+            supabase.table("user_insights").upsert(
+                payload, 
+                on_conflict="patient_id,insight_date,insight_type"
+            ).execute()
             
             from app.services.notification_templates import dispatch_notification, NotificationType
             token_res = supabase.table("device_tokens").select("fcm_token").eq("patient_id", patient_id).execute()
@@ -374,11 +373,10 @@ async def run_evening_checkins():
                 "insight_type": "EVENING_CHECKIN",
                 "insight_text": message
             }
-            existing_res = supabase.table("user_insights").select("id").eq("patient_id", patient_id).eq("insight_date", payload["insight_date"]).eq("insight_type", "EVENING_CHECKIN").execute()
-            if existing_res.data:
-                supabase.table("user_insights").update({"insight_text": message}).eq("id", existing_res.data[0]["id"]).execute()
-            else:
-                supabase.table("user_insights").insert(payload).execute()
+            supabase.table("user_insights").upsert(
+                payload, 
+                on_conflict="patient_id,insight_date,insight_type"
+            ).execute()
             
             from app.services.notification_templates import dispatch_notification, NotificationType
             token_res = supabase.table("device_tokens").select("fcm_token").eq("patient_id", patient_id).execute()
@@ -968,11 +966,10 @@ async def run_latenight_checkins():
                 "insight_type": "LATENIGHT_CHECKIN",
                 "insight_text": message
             }
-            existing_res = supabase.table("user_insights").select("id").eq("patient_id", patient_id).eq("insight_date", payload["insight_date"]).eq("insight_type", "LATENIGHT_CHECKIN").execute()
-            if existing_res.data:
-                supabase.table("user_insights").update({"insight_text": message}).eq("id", existing_res.data[0]["id"]).execute()
-            else:
-                supabase.table("user_insights").insert(payload).execute()
+            supabase.table("user_insights").upsert(
+                payload, 
+                on_conflict="patient_id,insight_date,insight_type"
+            ).execute()
                 
         except Exception as e:
             print(f"Failed to generate late-night checkin for {patient_id}: {e}")

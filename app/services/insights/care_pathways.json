@@ -7,9 +7,9 @@
         "level_1_bedside_triage": {
           "definition": "Early or mild temperature/heart rate deviation without acute distress. Focus on oral temperature check, hydration, and confusion screening.",
           "caregiver_checklist": [
-            "Check oral temperature using a digital thermometer under the tongue for 60 seconds",
-            "Offer 250ml of warm water or oral rehydration solution (ORS)",
-            "Ask 2 simple orientation questions: 'Do you know what day of the week it is?' and 'Where are we right now?'"
+            "Check your oral temperature with a digital thermometer under your tongue for 60 seconds",
+            "Drink a glass (250ml) of warm water or ORS to stay well hydrated",
+            "Take a quiet moment to sit down, rest, and note if you feel feverish, dizzy, or fatigued"
           ],
           "primary_cta": {
             "label": "Start Guided Infection Check",
@@ -25,9 +25,9 @@
         "level_2_diagnostic_investigation": {
           "definition": "Confirmed fever, sustained resting tachycardia (>15 bpm over baseline), or symptoms persisting >48h. Requires stat home phlebotomy and urine tests.",
           "caregiver_checklist": [
-            "Keep patient seated in a well-ventilated room and monitor respiratory comfort",
-            "Inspect urine sample for cloudiness or foul odor if possible",
-            "Prepare patient for home phlebotomist visit (keep health records handy)"
+            "Rest comfortably seated in a well-ventilated room",
+            "Have your health records and recent prescriptions ready for the home phlebotomist visit",
+            "Keep well hydrated with warm fluids while awaiting your home test"
           ],
           "primary_cta": {
             "label": "Book Home CBC & Urine Test",
@@ -44,9 +44,9 @@
         "level_3_acute_emergency": {
           "definition": "High fever with altered mental status, severe breathlessness, rigors, or signs of septic shock. Immediate emergency transfer required.",
           "caregiver_checklist": [
-            "Call emergency ambulance immediately and inform building security/attendant",
-            "Do not give solid food or oral medications if patient is disoriented",
-            "Keep patient lying on their side (recovery position) if drowsy to prevent aspiration"
+            "Sit or lie down in a comfortable resting position immediately",
+            "Call 108 ambulance right away or have someone transport you to the nearest casualty",
+            "Alert your primary caregiver or family member immediately"
           ],
           "primary_cta": {
             "label": "Call Ambulance / Casualty (108)",
@@ -68,9 +68,9 @@
         "level_1_bedside_triage": {
           "definition": "Borderline nocturnal SpO2 dips (92-94%) or occasional snoring. Focus on head-of-bed elevation, sleeping posture, and spot checking.",
           "caregiver_checklist": [
-            "Elevate the head of the bed by 30 degrees using an extra pillow to open airways",
-            "Ensure the patient avoids sleeping flat on their back (encourage side-sleeping)",
-            "Perform a daytime spot-check with a fingertip pulse oximeter while seated"
+            "Prop up your head and upper body with an extra pillow (about 30\u00b0) to keep your airways open",
+            "Try sleeping on your side rather than flat on your back tonight",
+            "Take a spot-check of your oxygen with your fingertip oximeter while sitting comfortably upright"
           ],
           "primary_cta": {
             "label": "Start Guided Respiratory Check",
@@ -86,9 +86,9 @@
         "level_2_diagnostic_investigation": {
           "definition": "Sustained nighttime hypoxemia (SpO2 nadir <92% across multiple nights) with acoustic snoring. Requires Home Sleep Apnea Test (HSAT).",
           "caregiver_checklist": [
-            "Check for morning headaches, dry mouth, or excessive daytime sleepiness",
-            "Observe if patient has pauses in breathing or gasping episodes during sleep",
-            "Schedule a Home Sleep Apnea Study device delivery to the patient's doorstep"
+            "Note if you feel morning headaches, dry mouth, or daytime sleepiness",
+            "Perform regular daytime oxygen checks while seated upright",
+            "Keep your bedroom well ventilated and prepare for your home sleep study device delivery"
           ],
           "primary_cta": {
             "label": "Book Home Sleep Apnea Test (HSAT)",
@@ -105,9 +105,9 @@
         "level_3_acute_emergency": {
           "definition": "Severe hypoxemia (SpO2 <88% during day or sustained), severe respiratory distress, stridor, or cyanosis. Immediate emergency intervention.",
           "caregiver_checklist": [
-            "Seat patient upright immediately in a chair or high-Fowler position",
-            "Administer prescribed emergency home oxygen if available (2 L/min via nasal cannula)",
-            "Call 108 ambulance or transport to nearest hospital emergency room immediately"
+            "Sit completely upright immediately in a supportive chair",
+            "Use your prescribed emergency home oxygen if available (2 L/min via nasal cannula)",
+            "Call 108 emergency ambulance or head to the nearest emergency room immediately"
           ],
           "primary_cta": {
             "label": "Call Emergency Services (108)",
@@ -129,9 +129,9 @@
         "level_1_bedside_triage": {
           "definition": "Mild fluid drift or minor weight fluctuation. Focus on morning weigh-ins, ankle checks, and sodium tracking.",
           "caregiver_checklist": [
-            "Weigh senior first thing in the morning after voiding, before breakfast",
-            "Check both ankles and shins by gently pressing for 5 seconds to test for pitting edema",
-            "Review dietary sodium and fluid intake from the past 24 hours"
+            "Step on your weighing scale first thing in the morning (after using the bathroom, before breakfast)",
+            "Gently press your fingers against your ankles or shins for 5 seconds to check for any swelling",
+            "Keep your salt intake light today and stay mindful of your fluid intake"
           ],
           "primary_cta": {
             "label": "Start Guided Fluid Check",
@@ -147,9 +147,9 @@
         "level_2_diagnostic_investigation": {
           "definition": "Confirmed weight gain (>1.5 kg in 3 days) or laboratory decline in eGFR/kidney function. Requires stat renal & electrolyte panel.",
           "caregiver_checklist": [
-            "Measure sitting and standing blood pressure to check for orthostatic changes",
-            "Note current doses of ACE inhibitors, ARBs (e.g. Telmisartan), and diuretics (e.g. Torsemide)",
-            "Keep patient hydrated while awaiting home lab blood collection"
+            "Measure your blood pressure while seated and after standing to check for any dizziness",
+            "Keep a written list of your daily heart and blood pressure medicines handy",
+            "Rest comfortably with your legs elevated on a footstool while awaiting home lab collection"
           ],
           "primary_cta": {
             "label": "Order Home Kidney & Electrolyte Labs",
@@ -167,9 +167,9 @@
         "level_3_acute_emergency": {
           "definition": "Acute congestive decompensation, severe shortness of breath when lying flat (orthopnea), frothy sputum, or hypertensive crisis. Immediate transfer required.",
           "caregiver_checklist": [
-            "Sit patient completely upright with legs hanging over the side of the bed to reduce venous return",
-            "Do NOT administer extra fluids",
-            "Call 108 ambulance or rush to nearest emergency casualty"
+            "Sit completely upright with your legs hanging over the side of the bed to ease breathing",
+            "Do NOT drink extra fluids right now",
+            "Call 108 ambulance immediately or have someone rush you to emergency casualty"
           ],
           "primary_cta": {
             "label": "Call Ambulance / Casualty (108)",
@@ -191,9 +191,9 @@
         "level_1_bedside_triage": {
           "definition": "Mild gait slowing or temporary fatigue after poor sleep. Focus on home environmental hazard removal and assistive footwear.",
           "caregiver_checklist": [
-            "Clear all walking paths: secure loose carpets, dhurries, and electrical cords",
-            "Verify that bathroom and hallway nightlights are turned on and functioning",
-            "Ensure the senior wears non-skid, supportive footwear inside the house (no bare socks)"
+            "Make sure walking pathways in your room are clear of loose rugs, clutter, or cords",
+            "Keep a nightlight or bedside lamp on if getting up in the dark",
+            "Wear non-skid supportive slippers or footwear inside (avoid walking in bare socks)"
           ],
           "primary_cta": {
             "label": "Start Guided Fall Safety Audit",
@@ -209,9 +209,9 @@
         "level_2_diagnostic_investigation": {
           "definition": "Chronic cadence slowing (<65 spm for 2 weeks), near-falls, or sarcopenic decline. Requires home physiotherapy assessment.",
           "caregiver_checklist": [
-            "Accompany the senior during all transfers (chair to standing, bed to bathroom)",
-            "Check if knee or hip joint pain is restricting natural walking speed",
-            "Prepare comfortable attire for an at-home physiotherapy balance assessment"
+            "Take your time when moving between sitting and standing, and hold onto sturdy support",
+            "Notice if any knee, hip, or back stiffness is slowing your natural walking pace",
+            "Wear comfortable, loose clothing for your upcoming home physiotherapy assessment"
           ],
           "primary_cta": {
             "label": "Book Home Geriatric Physiotherapist",
@@ -228,9 +228,9 @@
         "level_3_acute_emergency": {
           "definition": "Suspected fall, sudden inability to bear weight, severe hip/back pain, or head impact. Immediate emergency triage.",
           "caregiver_checklist": [
-            "Do NOT attempt to abruptly lift or pull the senior up if they report severe pain",
-            "Check for head injury, cuts, limb rotation, or loss of consciousness",
-            "Keep patient warm with a light blanket and call emergency medical support"
+            "If you have fallen or feel severe pain, stay still and do NOT attempt to get up abruptly",
+            "Call out for help or tap your emergency button to alert family and emergency services (108)",
+            "Keep warm with a light blanket while waiting for emergency assistance"
           ],
           "primary_cta": {
             "label": "Call Emergency Assistance (108)",
@@ -252,9 +252,9 @@
         "level_1_bedside_triage": {
           "definition": "Subtle autonomic drift or mild blood pressure elevation (Stage 1). Focus on orthostatic cautions and relaxation.",
           "caregiver_checklist": [
-            "Instruct senior to sit on the edge of the bed for 60 seconds before standing up",
-            "Avoid sudden hot showers or large carbohydrate-heavy meals in the morning",
-            "Re-check sitting blood pressure and pulse after 30 minutes of quiet rest"
+            "Sit on the edge of your bed for 60 seconds before standing up to avoid dizziness",
+            "Avoid very hot showers or rushing right after waking up",
+            "Re-measure your sitting blood pressure and pulse after 30 minutes of restful sitting"
           ],
           "primary_cta": {
             "label": "Start Guided Cardiac Check",
@@ -270,9 +270,9 @@
         "level_2_diagnostic_investigation": {
           "definition": "Sustained Stage 2 Hypertension, non-dipping night HR profile, or blunted HR recovery. Requires at-home ECG / Holter and cardiology review.",
           "caregiver_checklist": [
-            "Log morning and evening blood pressure readings in a structured diary",
-            "Note any episodes of palpitations, lightheadedness, or racing heartbeat",
-            "Schedule an at-home 12-lead ECG technician visit"
+            "Log your morning and evening blood pressure and pulse in your app diary",
+            "Avoid strenuous physical exertion and rest in a cool, comfortable environment",
+            "Keep your skin clean and dry before the home ECG / Holter technician arrives"
           ],
           "primary_cta": {
             "label": "Book At-Home 12-Lead ECG / Holter",
@@ -289,9 +289,9 @@
         "level_3_acute_emergency": {
           "definition": "Hypertensive urgency (BP >= 180 mmHg with headache), acute chest pressure, radiation to jaw/left arm, or sudden syncope. Immediate emergency dispatch.",
           "caregiver_checklist": [
-            "Sit patient in a comfortable position, loosen tight clothing around neck and chest",
-            "Check if patient has prescribed SOS cardiac medications (e.g., Sorbitrate / Aspirin)",
-            "Call 108 ambulance immediately and notify family doctor"
+            "Sit down in a comfortable chair immediately and loosen any tight clothing around your neck and chest",
+            "If you have prescribed SOS emergency cardiac tablets (e.g., Sorbitrate/Aspirin), take as advised by your doctor",
+            "Call 108 cardiac emergency ambulance immediately"
           ],
           "primary_cta": {
             "label": "Call Cardiac Emergency (108)",
@@ -313,9 +313,9 @@
         "level_1_bedside_triage": {
           "definition": "Isolated night of poor deep sleep with expected mild morning insulin resistance. Focus on breakfast portion control and post-meal stroll.",
           "caregiver_checklist": [
-            "Provide a low-glycemic, protein-rich breakfast (e.g. besan chilla, eggs, or sprouted moong)",
-            "Encourage a gentle 15-minute post-breakfast walk to facilitate muscle glucose uptake",
-            "Verify blood sugar 2 hours post-meal with a home glucometer"
+            "Have a wholesome, protein-rich breakfast (such as besan chilla, eggs, or sprouted moong)",
+            "Take a gentle 10 to 15-minute walk after eating to help balance your blood sugar",
+            "Check your blood sugar 2 hours after your meal with your home glucometer"
           ],
           "primary_cta": {
             "label": "Start Guided Glucose & Diet Check",
@@ -331,9 +331,9 @@
         "level_2_diagnostic_investigation": {
           "definition": "Frequent morning spikes, postprandial surges (>180 mg/dL), or rising HbA1c trend. Requires comprehensive metabolic lab review.",
           "caregiver_checklist": [
-            "Record 3-day fasting and post-meal blood sugar levels",
-            "Review medication timings (ensure anti-diabetic medications are taken with meals)",
-            "Schedule home phlebotomist for fasting blood sugar, HbA1c, and lipid panel"
+            "Record your fasting and 2-hour post-meal blood sugar levels in your health log",
+            "Maintain consistent meal times and stay well hydrated with plain water",
+            "Keep your glucometer readings handy for your upcoming doctor or diabetes educator review"
           ],
           "primary_cta": {
             "label": "Order Home HbA1c & Fasting Panel",
@@ -351,9 +351,9 @@
         "level_3_acute_emergency": {
           "definition": "Critical hypoglycemia (<54 mg/dL) with confusion/sweating OR severe hyperglycemia (>250 mg/dL with ketones/vomiting). Immediate emergency protocol.",
           "caregiver_checklist": [
-            "If blood sugar <70 mg/dL and patient is conscious, immediately give 15g fast-acting sugar (1/2 cup fruit juice, 3-4 glucose tablets, or 3 tsp sugar in water)",
-            "Re-check blood glucose in 15 minutes",
-            "If patient is drowsy, unresponsive, or blood sugar remains critical, call 108 immediately"
+            "If your blood sugar is below 70 mg/dL and you feel shaky, immediately drink 1/2 cup fruit juice or 3 tsp sugar in water",
+            "Re-check your blood glucose in 15 minutes",
+            "If you feel faint, severely dizzy, or readings remain critical, call 108 medical emergency immediately"
           ],
           "primary_cta": {
             "label": "Call Medical Emergency (108)",
@@ -375,9 +375,9 @@
         "level_1_bedside_triage": {
           "definition": "Missed doses or minor scheduling confusion. Focus on pill-box reconciliation and audio reminders.",
           "caregiver_checklist": [
-            "Check the weekly pill organizer against the latest doctor prescription",
-            "Confirm whether yesterday's evening medications were taken or accidentally skipped",
-            "Ensure medications are kept in a visible, easily accessible location"
+            "Check your weekly pill box against your doctor's latest prescription",
+            "Double check if you took your evening medicines yesterday or if any were missed",
+            "Keep your medicines and water bottle within easy reach on your bedside table"
           ],
           "primary_cta": {
             "label": "Start Guided Medicine Box Check",
@@ -393,9 +393,9 @@
         "level_2_diagnostic_investigation": {
           "definition": "Suspected drug interaction, daytime dizziness, anticholinergic confusion, or multiple missed doses. Requires clinical pharmacist / GP review.",
           "caregiver_checklist": [
-            "Gather all current prescription boxes, syrups, and over-the-counter supplements in one tray",
-            "Document any new symptoms that started after a recent medicine change",
-            "Book a teleconsultation for comprehensive medication deprescribing review"
+            "Gather all your prescription boxes, syrups, and vitamins in one tray for doctor review",
+            "Write down any side effects, nausea, or dizziness you noticed after taking your medicines",
+            "Never stop or change prescribed doses on your own without consulting your doctor"
           ],
           "primary_cta": {
             "label": "Schedule Medication Review",
@@ -411,9 +411,9 @@
         "level_3_acute_emergency": {
           "definition": "Acute drug toxicity, severe allergic reaction (anaphylaxis, facial swelling), profound bradycardia (<45 bpm), or collapse following medication. Immediate transfer.",
           "caregiver_checklist": [
-            "Stop any further medication administration immediately",
-            "Keep the medication packaging ready to hand over to the emergency medical team",
-            "Call 108 ambulance immediately"
+            "Stop taking any further medication doses immediately",
+            "Keep the medicine strips or bottles right beside you so doctors know exactly what was taken",
+            "Call 108 emergency services immediately or have family take you to casualty"
           ],
           "primary_cta": {
             "label": "Call Emergency Services (108)",
@@ -435,9 +435,9 @@
         "level_1_bedside_triage": {
           "definition": "All vitals stable and within target range. Reinforce positive habits and longevity milestones.",
           "caregiver_checklist": [
-            "Commend the senior for maintaining good mobility and regular sleep habits",
-            "Encourage continuing their daily walking and hydration routine",
-            "Review monthly health summary together"
+            "Take pride in keeping up your consistent walking pace and restful sleep",
+            "Keep up your regular morning walks and drink plenty of fluids",
+            "Review your monthly progress report on your dashboard"
           ],
           "primary_cta": {
             "label": "View Progress Report",
@@ -453,8 +453,8 @@
         "level_2_diagnostic_investigation": {
           "definition": "Stable chronic maintenance with upcoming annual preventive wellness checks.",
           "caregiver_checklist": [
-            "Check if annual routine preventive blood work is due this quarter",
-            "Ensure regular dental and vision checkups are scheduled"
+            "Check if your routine annual preventive blood tests are due this quarter",
+            "Plan your health goals and daily step targets for the upcoming month"
           ],
           "primary_cta": {
             "label": "Book Annual Senior Health Check",
@@ -470,9 +470,9 @@
         "level_3_acute_emergency": {
           "definition": "Fallback emergency redirect if an urgent flag unexpectedly co-occurs.",
           "caregiver_checklist": [
-            "Assess immediate patient comfort and vital responsiveness",
-            "Contact primary family caregiver or physician if new acute symptoms arise",
-            "Prepare emergency contact list and recent health records"
+            "Take a restful seat and check how you are feeling",
+            "Contact your family doctor or emergency services (108) if sudden acute discomfort arises",
+            "Keep your recent health records and emergency contacts readily accessible"
           ],
           "primary_cta": {
             "label": "Call Emergency Services (108)",

@@ -18,7 +18,7 @@ nudges_def = [
     {
         "risk_level": "HIGH",
         "nudge_title": "Urgent Health Alert: High Fever & Elevated Pulse Detected",
-        "nudge_text": f"{PATIENT_NAME}'s body temperature spiked to 38.6°C alongside a resting heart rate of 108 bpm and 18 nocturnal coughs. This combination indicates severe acute infection or sepsis requiring immediate medical evaluation.",
+        "nudge_text": "Your body temperature spiked to 38.6°C alongside a resting heart rate of 108 bpm and 18 nocturnal coughs. This combination indicates severe acute infection or sepsis requiring immediate medical evaluation.",
         "why_flagged": {
             "summary": "Resting pulse climbed 40 bpm above baseline in response to a +1.6°C skin temperature rise, exceeding Liebermeister's physiological response threshold. Night microphone logged frequent coughing bouts.",
             "primary_vitals": [
@@ -33,7 +33,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Immediate Emergency Medical Transfer",
             "title_emphasis": "CRITICAL",
-            "description": f"Do not wait. Have {PATIENT_NAME} sit in a recovery position and seek emergency medical casualty transport.",
+            "description": "Do not wait. Sit in a comfortable upright recovery position and seek immediate emergency medical evaluation or casualty transport.",
             "selected_domain": "occult_infection_sepsis",
             "escalation_level": "level_3_acute_emergency"
         }
@@ -43,7 +43,7 @@ nudges_def = [
     {
         "risk_level": "MEDIUM",
         "nudge_title": "Follow-Up: Low-Grade Temperature & Pulse Elevation Persisting for 48 Hours",
-        "nudge_text": f"Subtle temperature elevation (+0.9°C) and resting tachycardia (82 bpm) have now persisted across 3 consecutive days for {PATIENT_NAME}. We recommend scheduling at-home blood and urine laboratory tests today.",
+        "nudge_text": "Subtle temperature elevation (+0.9°C) and resting tachycardia (82 bpm) have now persisted across 3 consecutive days. We recommend scheduling at-home blood and urine laboratory tests today.",
         "why_flagged": {
             "summary": "This physiological temperature drift and mild tachycardia has failed to normalize over 48 hours. In older adults, persistent sub-febrile shifts frequently represent occult urinary tract or chest infections.",
             "primary_vitals": [
@@ -58,7 +58,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Stat Diagnostic Phlebotomy & Urine Test",
             "title_emphasis": "RECOMMENDED",
-            "description": f"Book home sample collection for CBC and Urine Routine, and share the 3-day vital history with {PATIENT_NAME}'s family doctor.",
+            "description": "Book home sample collection for CBC and Urine Routine, and share your 3-day vital history with your family doctor.",
             "selected_domain": "occult_infection_sepsis",
             "escalation_level": "level_2_diagnostic_investigation",
             "escalation_reason": "Longitudinal Escalation: This physiological anomaly has persisted for over 48 hours without resolution. Stepping up to at-home diagnostic review."
@@ -69,7 +69,7 @@ nudges_def = [
     {
         "risk_level": "LOW",
         "nudge_title": "Early Health Note: Slight Temperature Shift Observed Last Night",
-        "nudge_text": f"We noticed a slight +0.8°C shift in {PATIENT_NAME}'s skin temperature last night. While vitals remain stable, simple bedside hydration and an oral temperature check are advised this morning.",
+        "nudge_text": "We noticed a slight +0.8°C shift in your skin temperature last night. While vitals remain stable, simple bedside hydration and an oral temperature check are advised this morning.",
         "why_flagged": {
             "summary": "Skin temperature was mildly elevated overnight. Morning pulse and activity are currently stable, but early hydration helps support the body's immune defenses.",
             "primary_vitals": [
@@ -83,7 +83,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Bedside Check & Fluids",
             "title_emphasis": "WATCHFUL WAITING",
-            "description": f"Offer {PATIENT_NAME} a glass of warm water or ORS, check oral temperature, and ensure comfortable room ventilation.",
+            "description": "Drink a glass of warm water or ORS, check your oral temperature, and rest in a comfortable, well-ventilated room.",
             "selected_domain": "occult_infection_sepsis",
             "escalation_level": "level_1_bedside_triage"
         }
@@ -93,7 +93,7 @@ nudges_def = [
     {
         "risk_level": "HIGH",
         "nudge_title": "Critical Alert: Severe Nocturnal Oxygen Drop & Rapid Breathing",
-        "nudge_text": f"Blood oxygen dipped to a critical nadir of 86% during sleep with respiratory rate spiking to 26 breaths/min. Immediate clinical assessment and emergency oxygen support are required.",
+        "nudge_text": "Your blood oxygen dipped to a critical nadir of 86% during sleep with respiratory rate spiking to 26 breaths/min. Immediate clinical assessment and emergency oxygen support are required.",
         "why_flagged": {
             "summary": "Oxygen saturation dropped severely below the British Thoracic Society critical safety threshold of 88%, accompanied by compensatory rapid breathing (NEWS2 Score 3).",
             "primary_vitals": [
@@ -108,7 +108,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Emergency Medical Evaluation Required",
             "title_emphasis": "IMMEDIATE ACTION",
-            "description": f"Have {PATIENT_NAME} sit completely upright and call 108 emergency ambulance immediately.",
+            "description": "Sit completely upright, take slow deep breaths, and call 108 emergency ambulance immediately.",
             "selected_domain": "respiratory_hypoxemia_osa",
             "escalation_level": "level_3_acute_emergency"
         }
@@ -118,7 +118,7 @@ nudges_def = [
     {
         "risk_level": "MEDIUM",
         "nudge_title": "Sleep Pattern Flag: Nighttime Oxygen Dips & Regular Snoring Detected",
-        "nudge_text": f"{PATIENT_NAME}'s oxygen saturation dropped to 90% last night alongside 9 snoring events recorded by acoustic sensors. This pattern is characteristic of Obstructive Sleep Apnea.",
+        "nudge_text": "Your oxygen saturation dropped to 90% last night alongside 9 snoring events recorded by acoustic sensors. This pattern is characteristic of Obstructive Sleep Apnea.",
         "why_flagged": {
             "summary": "Oxygen saturation fell below the 92% clinical threshold during sleep sessions with concurrent snoring, and deep restorative sleep dropped to only 32 minutes.",
             "primary_vitals": [
@@ -133,7 +133,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Home Sleep Apnea Test (HSAT)",
             "title_emphasis": "DIAGNOSTIC TEST",
-            "description": f"Order an at-home sleep apnea testing device to monitor airflow and breathing patterns throughout the night.",
+            "description": "Order an at-home sleep apnea testing device to monitor your airflow and breathing patterns throughout the night.",
             "selected_domain": "respiratory_hypoxemia_osa",
             "escalation_level": "level_2_diagnostic_investigation"
         }
@@ -143,7 +143,7 @@ nudges_def = [
     {
         "risk_level": "LOW",
         "nudge_title": "Sleep Breathing Check: Borderline Nighttime Oxygen Dip Observed",
-        "nudge_text": f"A brief dip in oxygen to 93% was observed during {PATIENT_NAME}'s sleep. Adjusting sleeping posture and elevating the head of the bed can help keep airways clear.",
+        "nudge_text": "A brief dip in oxygen to 93% was observed during your sleep. Adjusting your sleeping posture and elevating the head of your bed can help keep airways clear.",
         "why_flagged": {
             "summary": "Oxygen saturation dipped slightly below the standard 94% threshold. Breathing rate and heart rate remained stable.",
             "primary_vitals": [
@@ -157,7 +157,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Adjust Sleep Posture & Spot Check",
             "title_emphasis": "SIMPLE ADJUSTMENT",
-            "description": f"Use an extra pillow to elevate {PATIENT_NAME}'s head 30 degrees and encourage sleeping on their side tonight.",
+            "description": "Use an extra pillow to elevate your head 30 degrees and try sleeping on your side tonight.",
             "selected_domain": "respiratory_hypoxemia_osa",
             "escalation_level": "level_1_bedside_triage"
         }
@@ -167,7 +167,7 @@ nudges_def = [
     {
         "risk_level": "HIGH",
         "nudge_title": "Fall Safety Warning: High Movement at Shuffling Pace After Severe Sleep Loss",
-        "nudge_text": f"{PATIENT_NAME} has completed over 4,200 steps at a cautious, shuffling pace of 54 steps/min following only 4.1 hours of fragmented sleep. Fatigue dramatically increases tripping risk today.",
+        "nudge_text": "You completed over 4,200 steps at a cautious, shuffling pace of 54 steps/min following only 4.1 hours of fragmented sleep. Fatigue dramatically increases tripping risk today.",
         "why_flagged": {
             "summary": "High physical exposure (4,200 steps) with compromised gait kinematics (cadence 54 spm, sit-to-stand 18.2s) under acute sleep deprivation multiplies fall risk threefold per AGS guidelines.",
             "primary_vitals": [
@@ -183,7 +183,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Immediate Fall Prevention Protocol",
             "title_emphasis": "HIGH FALL RISK",
-            "description": f"Supervise {PATIENT_NAME}'s walking closely today, ensure non-skid footwear, and encourage rest to recover balance.",
+            "description": "Walk carefully today, wear non-skid supportive footwear, avoid rushing, and rest to recover your balance.",
             "selected_domain": "sarcopenia_fall_prevention",
             "escalation_level": "level_3_acute_emergency"
         }
@@ -193,7 +193,7 @@ nudges_def = [
     {
         "risk_level": "MEDIUM",
         "nudge_title": "Mobility Trend: Walking Speed & Daily Movement Have Declined Over 2 Weeks",
-        "nudge_text": f"{PATIENT_NAME}'s 14-day median walking cadence has dropped to 62 steps/min with active movement time under 20 minutes daily. An at-home physiotherapy review will help rebuild leg strength.",
+        "nudge_text": "Your 14-day median walking cadence has dropped to 62 steps/min with active movement time under 20 minutes daily. An at-home physiotherapy review will help rebuild leg strength.",
         "why_flagged": {
             "summary": "Walking cadence below 65 spm (corresponding to <0.8 m/s) meets EWGSOP2 European consensus criteria for progressive sarcopenia and muscle weakness.",
             "primary_vitals": [
@@ -208,7 +208,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Home Geriatric Physiotherapy Assessment",
             "title_emphasis": "STRENGTH & BALANCE",
-            "description": f"Book an at-home physiotherapy session for a formal balance test and gentle quadriceps strengthening exercises.",
+            "description": "Book an at-home physiotherapy session for a personalized balance evaluation and gentle quadriceps strengthening exercises.",
             "selected_domain": "sarcopenia_fall_prevention",
             "escalation_level": "level_2_diagnostic_investigation"
         }
@@ -218,7 +218,7 @@ nudges_def = [
     {
         "risk_level": "MEDIUM",
         "nudge_title": "Cardiovascular Trend: Rapid Weight Gain & Lost Nighttime Heart Rate Dip",
-        "nudge_text": f"{PATIENT_NAME} gained 2.1 kg over the last 3 days while their night heart rate remained elevated at 76 bpm. This combination suggests early fluid retention and volume overload.",
+        "nudge_text": "You gained 2.1 kg over the last 3 days while your night heart rate remained elevated at 76 bpm. This combination suggests early fluid retention and volume overload.",
         "why_flagged": {
             "summary": "Weight gain exceeding 1.5 kg in 72 hours alongside a non-dipping nighttime heart rate profile indicates persistent sympathetic activation and fluid redistribution.",
             "primary_vitals": [
@@ -233,7 +233,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Kidney Labs & Medication Review",
             "title_emphasis": "FLUID CHECK",
-            "description": f"Order home blood tests for Creatinine and Electrolytes, and check {PATIENT_NAME}'s ankles for swelling.",
+            "description": "Order home blood tests for Creatinine and Electrolytes, check your ankles for swelling, and avoid adding extra salt today.",
             "selected_domain": "cardiorenal_fluid_balance",
             "escalation_level": "level_2_diagnostic_investigation"
         }
@@ -243,7 +243,7 @@ nudges_def = [
     {
         "risk_level": "HIGH",
         "nudge_title": "Urgent Medical Alert: Severe Blood Pressure Surge (184/110 mmHg)",
-        "nudge_text": f"Blood pressure reading of 184/110 mmHg recorded this morning with pulse at 104 bpm. Per ACC/AHA clinical guidelines, readings above 180 mmHg require immediate medical intervention.",
+        "nudge_text": "Blood pressure reading of 184/110 mmHg recorded this morning with pulse at 104 bpm. Per ACC/AHA clinical guidelines, readings above 180 mmHg require immediate medical intervention.",
         "why_flagged": {
             "summary": "Blood pressure has escalated directly into the Hypertensive Urgency category (Systolic >= 180 mmHg). Resting tachycardia further indicates acute cardiovascular stress.",
             "primary_vitals": [
@@ -258,7 +258,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Immediate Clinical Evaluation Required",
             "title_emphasis": "HYPERTENSIVE URGENCY",
-            "description": f"Have {PATIENT_NAME} sit quietly, check for headache or chest tightness, and call emergency medical services immediately.",
+            "description": "Sit quietly in a comfortable chair, take slow calm breaths, check for headache or chest tightness, and call emergency medical services immediately.",
             "selected_domain": "cardio_autonomic_strain",
             "escalation_level": "level_3_acute_emergency"
         }
@@ -268,7 +268,7 @@ nudges_def = [
     {
         "risk_level": "MEDIUM",
         "nudge_title": "Metabolic Flag: High Morning Blood Sugar Following Poor Deep Sleep",
-        "nudge_text": f"{PATIENT_NAME}'s fasting blood sugar was 146 mg/dL this morning following only 28 minutes of deep restorative sleep last night. Deep sleep depletion significantly blunts insulin sensitivity.",
+        "nudge_text": "Your fasting blood sugar was 146 mg/dL this morning following only 28 minutes of deep restorative sleep last night. Deep sleep depletion significantly blunts insulin sensitivity.",
         "why_flagged": {
             "summary": "Deep sleep (slow-wave Stage 5) dropped below 45 minutes, directly driving next-day insulin resistance as documented in PNAS medical research.",
             "primary_vitals": [
@@ -283,7 +283,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Fasting Metabolic Lab Review",
             "title_emphasis": "GLYCEMIC CONTROL",
-            "description": f"Schedule an at-home fasting blood glucose and HbA1c panel to assess 3-month glycemic stability.",
+            "description": "Schedule an at-home fasting blood glucose and HbA1c panel to assess your 3-month glycemic stability.",
             "selected_domain": "sleep_metabolic_dysregulation",
             "escalation_level": "level_2_diagnostic_investigation"
         }
@@ -293,7 +293,7 @@ nudges_def = [
     {
         "risk_level": "LOW",
         "nudge_title": "Vitality Celebration: Outstanding Walking Cadence & Deep Sleep Rest",
-        "nudge_text": f"{PATIENT_NAME} achieved an exceptional brisk walking cadence of 89 steps/min across 9 active daytime hours yesterday, followed by 78 minutes of deep restorative sleep last night.",
+        "nudge_text": "You achieved an exceptional brisk walking cadence of 89 steps/min across 9 active daytime hours yesterday, followed by 78 minutes of deep restorative sleep last night.",
         "why_flagged": {
             "summary": "All primary biomarkers are operating in optimal longevity ranges. Cadence exceeds the WHO 85 spm brisk senior threshold and sleep architecture shows full restorative cycles.",
             "primary_vitals": [
@@ -308,7 +308,7 @@ nudges_def = [
         "action_steps_input": {
             "title": "Maintain Vitality & Longevity Routine",
             "title_emphasis": "WELL DONE",
-            "description": f"Celebrate this healthy milestone with {PATIENT_NAME} and review their monthly progress report together.",
+            "description": "Keep up this wonderful routine! Maintain your hydration, daily movement, and consistent bedtime habits.",
             "selected_domain": "wellness_vitality_reinforcement",
             "escalation_level": "level_1_bedside_triage"
         }

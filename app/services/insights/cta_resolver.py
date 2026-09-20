@@ -102,8 +102,8 @@ def resolve_ctas(
             "title": "Action Required",
             "description": str(action_steps),
             "caregiver_checklist": [
-                "Check in on your loved one's current comfort and hydration",
-                "Review today's vitals on the dashboard"
+                "Take a quiet moment to sit down, rest, and drink a glass of water",
+                "Review today's vitals on your dashboard"
             ],
             "primary_cta": {
                 "label": "Review my metrics",
