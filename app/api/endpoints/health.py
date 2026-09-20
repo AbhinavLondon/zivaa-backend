@@ -346,6 +346,18 @@ async def sync_complete(payload: SyncCompletePayload, background_tasks: Backgrou
         raise HTTPException(status_code=400, detail="patient_id is required")
         
     from app.services.insights.data_fetcher import supabase
+    
+    # 0. Automatically update the patient's real device timezone in the database
+    if payload.timezone and payload.timezone.strip():
+        try:
+            import zoneinfo
+            clean_tz = payload.timezone.strip()
+            zoneinfo.ZoneInfo(clean_tz)
+            supabase.table("patients").update({"timezone": clean_tz}).eq("id", payload.patient_id).execute()
+            print(f"[SYNC] Updated patient {payload.patient_id} timezone to {clean_tz}")
+        except Exception as e:
+            print(f"[SYNC] Failed to update patient timezone ({payload.timezone}) for {payload.patient_id}: {e}")
+
     if payload.sync_type:
         print(f"[SYNC] {payload.patient_id} completed {payload.sync_type} sync. Records: {payload.records_synced}, Types: {payload.metric_types}")
         try:
