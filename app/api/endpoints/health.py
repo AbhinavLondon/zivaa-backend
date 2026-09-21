@@ -371,10 +371,34 @@ async def sync_complete(payload: SyncCompletePayload, background_tasks: Backgrou
         except Exception as e:
             print(f"Failed to insert into sync_logs: {e}")
 
-    # 1. Dispatch Tripwire Evaluation (Debounced 25s to coalesce burst sync chunks)
+    # 1. Dispatch Asynchronous Vitals Aggregation Rollup
+    from app.services.vitals_rollup_service import (
+        recalculate_live_vitals, 
+        recalculate_historical_vitals_windowed
+    )
+
+    if payload.sync_type == "HistoricalBackfill":
+        print(f"[SYNC] Enqueuing windowed historical backfill rollup for {payload.patient_id}")
+        background_tasks.add_task(
+            recalculate_historical_vitals_windowed,
+            patient_id=payload.patient_id,
+            lookback_days=90,
+            window_days=7,
+            timezone_str=payload.timezone
+        )
+    else:
+        # Standard live sync (Foreground or Background):
+        # Execute live rollup in background task so sync_complete responds immediately
+        background_tasks.add_task(
+            recalculate_live_vitals,
+            patient_id=payload.patient_id,
+            timezone_str=payload.timezone
+        )
+
+    # 2. Dispatch Tripwire Evaluation (Debounced 25s to coalesce burst sync chunks)
     schedule_debounced_tripwire(payload.patient_id, delay_seconds=25)
     
-    # 2. Event-Driven Morning Generation Pipeline
+    # 3. Event-Driven Morning Generation Pipeline
     try:
         import zoneinfo
         from datetime import datetime, timezone
