@@ -29,11 +29,22 @@ async def run_morning_generation_pipeline(patient_id: str):
     from datetime import datetime, timezone
     
     try:
-        # Get patient name
-        res_patient = supabase.table("patients").select("full_name").eq("id", patient_id).execute()
+        # Get patient name and timezone
+        res_patient = supabase.table("patients").select("full_name, timezone").eq("id", patient_id).execute()
         patient_name = "your loved one"
-        if res_patient.data and "full_name" in res_patient.data[0]:
-            patient_name = res_patient.data[0]["full_name"]
+        pt_tz_str = "UTC"
+        if res_patient.data:
+            if "full_name" in res_patient.data[0]:
+                patient_name = res_patient.data[0]["full_name"]
+            if res_patient.data[0].get("timezone"):
+                pt_tz_str = res_patient.data[0]["timezone"]
+                
+        import zoneinfo
+        try:
+            pt_tz = zoneinfo.ZoneInfo(pt_tz_str)
+        except Exception:
+            pt_tz = timezone.utc
+        today_date_str = datetime.now(pt_tz).date().isoformat()
 
         # 1. Generate Morning Summary
         print("Calling generate_medgemma_summary...")
@@ -53,8 +64,23 @@ async def run_morning_generation_pipeline(patient_id: str):
             "patient_id": patient_id,
             "summary": summary_text,
             "headline": summary_res.get("headline", "A bright, active day"),
+            "date": today_date_str,
         }
-        supabase.table("daily_morning_briefings").insert(payload_briefing).execute()
+        
+        # Check if today's briefing already exists (e.g. from early fallback) to update instead of duplicating
+        existing_briefing = supabase.table("daily_morning_briefings") \
+            .select("id") \
+            .eq("patient_id", patient_id) \
+            .eq("date", today_date_str) \
+            .limit(1) \
+            .execute()
+            
+        if existing_briefing.data:
+            supabase.table("daily_morning_briefings").update(payload_briefing).eq("id", existing_briefing.data[0]["id"]).execute()
+            print(f"Updated existing morning briefing for patient {patient_id} ({today_date_str})")
+        else:
+            supabase.table("daily_morning_briefings").insert(payload_briefing).execute()
+            print(f"Inserted new morning briefing for patient {patient_id} ({today_date_str})")
 
         # 2. Generate Daily Plan
         plan_context = build_plan_context(patient_id)
@@ -529,8 +555,8 @@ async def run_morning_nudge_dispatch():
     from app.services.medgemma_services import generate_medgemma_nudge
     from datetime import datetime, timezone, timedelta
     
-    # We look for active insights created or updated in the last 12 hours
-    twelve_hours_ago = (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat()
+    # Look back 26 hours to ensure insights generated during the day don't fall into the dead zone before the 8 AM dispatch
+    recent_window_start = (datetime.now(timezone.utc) - timedelta(hours=26)).isoformat()
     
     res = supabase.table("patients").select("id, full_name, caregiver_nudge_preference, timezone").execute()
     if not res.data:
@@ -576,8 +602,8 @@ async def run_morning_nudge_dispatch():
                 c_at = a.get("created_at")
                 u_at = a.get("updated_at")
                 
-                # Check if recent (created or updated within last 12 hours) - PRESERVES updated_at
-                is_recent = (c_at and c_at >= twelve_hours_ago) or (u_at and u_at >= twelve_hours_ago)
+                # Check if recent (created or updated within our 26-hour window) - PRESERVES updated_at
+                is_recent = (c_at and c_at >= recent_window_start) or (u_at and u_at >= recent_window_start)
                 if not is_recent:
                     continue
 

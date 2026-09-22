@@ -419,19 +419,29 @@ async def sync_complete(payload: SyncCompletePayload, background_tasks: Backgrou
             today_start_utc = local_today_start.astimezone(timezone.utc).isoformat()
             
             # Check if we already generated the morning briefing today
-            res_briefing = supabase.table("daily_morning_briefings").select("id").eq("patient_id", payload.patient_id).gte("created_at", today_start_utc).limit(1).execute()
+            res_briefing = supabase.table("daily_morning_briefings").select("id, created_at").eq("patient_id", payload.patient_id).gte("created_at", today_start_utc).order("created_at", desc=True).limit(1).execute()
             
-            if not res_briefing.data:
-                # Briefing hasn't been generated yet today.
-                # Check if sleep data was ingested today in the database.
-                res_sleep = supabase.table("vitals_raw").select("id").eq("patient_id", payload.patient_id).eq("metric_type", "SleepSessionRecord").gte("ingested_at", today_start_utc).limit(1).execute()
-                
-                if res_sleep.data:
-                    from app.services.scheduler_jobs import run_morning_generation_pipeline
-                    from app.services.longevity_engine import generate_daily_protocols
-                    print(f"Sync-complete triggered morning generation pipeline for {payload.patient_id} (Sleep data ingested today)")
-                    background_tasks.add_task(run_morning_generation_pipeline, payload.patient_id)
-                    background_tasks.add_task(generate_daily_protocols, payload.patient_id)
+            # Check if sleep data was ingested today in the database.
+            res_sleep = supabase.table("vitals_raw").select("id, ingested_at").eq("patient_id", payload.patient_id).eq("metric_type", "SleepSessionRecord").gte("ingested_at", today_start_utc).order("ingested_at", desc=True).limit(1).execute()
+            
+            should_generate = False
+            if not res_briefing.data and res_sleep.data:
+                # Briefing hasn't been generated yet today and sleep data is available
+                should_generate = True
+                print(f"Sync-complete triggered morning generation pipeline for {payload.patient_id} (Sleep data ingested today)")
+            elif res_briefing.data and res_sleep.data:
+                # Briefing already exists for today, but check if fresh sleep data arrived AFTER the briefing was created
+                latest_briefing_time = res_briefing.data[0].get("created_at")
+                latest_sleep_time = res_sleep.data[0].get("ingested_at")
+                if latest_briefing_time and latest_sleep_time and str(latest_sleep_time) > str(latest_briefing_time):
+                    should_generate = True
+                    print(f"Sync-complete re-triggered morning generation pipeline for {payload.patient_id} (Late sleep arrival: sleep {latest_sleep_time} > briefing {latest_briefing_time})")
+            
+            if should_generate:
+                from app.services.scheduler_jobs import run_morning_generation_pipeline
+                from app.services.longevity_engine import generate_daily_protocols
+                background_tasks.add_task(run_morning_generation_pipeline, payload.patient_id)
+                background_tasks.add_task(generate_daily_protocols, payload.patient_id)
     except Exception as e:
         print(f"Failed to check/trigger morning generation pipeline: {e}")
         

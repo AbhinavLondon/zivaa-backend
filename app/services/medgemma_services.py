@@ -1304,65 +1304,136 @@ async def generate_medgemma_summary(patient_id: str, patient_name: str = "your l
     print("generate_medgemma_summary: Context fetched.")
     
     # Format vitals & alerts summary
-    yesterday_vitals = []
     vitals_dict = ctx.vitals._vitals
     
     from datetime import datetime, timedelta, timezone, date
-    yesterday_date = (datetime.now(timezone.utc) - timedelta(days=1)).date()
-    today_date = datetime.now(timezone.utc).date()
+    import zoneinfo
     
-    # Vitals classification sets (OVERNIGHT_METRICS, CUMULATIVE_METRICS) imported from app.services.insights.core
+    tz = timezone.utc
+    if hasattr(ctx, "patient_timezone") and ctx.patient_timezone:
+        try:
+            tz = zoneinfo.ZoneInfo(ctx.patient_timezone)
+        except Exception:
+            tz = timezone.utc
+            
+    today_date = datetime.now(tz).date()
+    yesterday_date = today_date - timedelta(days=1)
+    two_days_ago_date = today_date - timedelta(days=2)
+    
+    # 1. Calculate 3-day sleep progression so LLM has multi-day trend context
+    sleep_history_3days = []
+    sleep_vals = vitals_dict.get("sleep_hours", [])
+    day_labels = [
+        (today_date, "Last night (ending today)"),
+        (yesterday_date, "Yesterday"),
+        (two_days_ago_date, "2 days ago")
+    ]
+    for target_d, d_label in day_labels:
+        reading = next((
+            v for v in sleep_vals 
+            if (v.date if isinstance(v.date, date) else datetime.strptime(str(v.date)[:10], "%Y-%m-%d").date()) == target_d
+        ), None)
+        if reading and reading.value is not None and reading.value > 0:
+            sleep_history_3days.append(f"- {d_label}: {reading.value:.1f} hours")
+        else:
+            sleep_history_3days.append(f"- {d_label}: Not recorded")
+    sleep_trend_bullet = "\n".join(sleep_history_3days)
+
+    # 2. Separate into overnight vitals, activity vitals, and other daytime vitals
+    overnight_vitals = []
+    activity_vitals = []
+    other_vitals = []
+
+    friendly_labels = {
+        "sleep_efficiency_pct": "Sleep Efficiency",
+        "waso_mins": "Wake After Sleep Onset",
+        "awakenings_count_greater_than_5mins": "Awakenings (> 5 mins)",
+        "resting_heart_rate": "Resting Heart Rate",
+        "oxygen_sat": "Blood Oxygen (SpO2)",
+        "respiratory_rate": "Respiratory Rate",
+        "steps": "Daily Step Count",
+        "active_movement_minutes": "Active Movement Time",
+        "active_hours_count": "Daytime Active Hours",
+        "avg_cadence_spm": "Walking Cadence",
+    }
+
+    from app.services.insights.baseline import METRIC_THRESHOLDS
     for name, vals in vitals_dict.items():
-        if vals:
-            today_reading = None
-            yesterday_reading = None
+        if not vals or name.startswith("sleep_stage_"):
+            continue
             
-            for v in vals:
+        today_reading = None
+        yesterday_reading = None
+        for v in vals:
+            d_str = str(v.date)
+            if isinstance(v.date, str):
+                d_str = v.date.split('T')[0]
+            elif isinstance(v.date, date):
                 d_str = str(v.date)
-                if isinstance(v.date, str):
-                    d_str = v.date.split('T')[0]
-                elif isinstance(v.date, date):
-                    d_str = str(v.date)
 
-                if d_str == str(today_date):
-                    today_reading = v
-                elif d_str == str(yesterday_date):
-                    yesterday_reading = v
+            if d_str == str(today_date):
+                today_reading = v
+            elif d_str == str(yesterday_date):
+                yesterday_reading = v
 
-            selected_val = None
-            
-            if name in CUMULATIVE_METRICS:
-                # Strictly use yesterday's full day data
-                if yesterday_reading:
-                    selected_val = yesterday_reading.value
-            elif name in OVERNIGHT_METRICS:
-                # Strictly use today's (synced this morning) data. If they didn't wear the watch, it will correctly be None.
-                if today_reading:
-                    selected_val = today_reading.value
-            else:
-                # Point-in-time metrics. Use today's if logged this morning, fallback to yesterday
-                if today_reading:
-                    selected_val = today_reading.value
-                elif yesterday_reading:
-                    selected_val = yesterday_reading.value
+        label = friendly_labels.get(name, METRIC_THRESHOLDS.get(name, {}).get("label", name.replace("_", " ").title()))
 
-            if selected_val is not None:
-                from app.services.insights.baseline import METRIC_THRESHOLDS
-                label = METRIC_THRESHOLDS.get(name, {}).get("label", name.replace("_", " ").title())
-                if name == "avg_cadence_spm":
-                    yesterday_vitals.append(f"- {label}: {round(selected_val)} spm")
-                elif name == "active_movement_minutes":
-                    yesterday_vitals.append(f"- {label}: {round(selected_val)} mins")
-                elif name == "active_hours_count":
-                    yesterday_vitals.append(f"- {label}: {int(selected_val)}/12 daytime active hours")
-                elif name == "steps":
-                    yesterday_vitals.append(f"- {label}: {int(selected_val)} steps")
-                elif "sleep_hours" in name:
-                    yesterday_vitals.append(f"- {label}: {selected_val:.1f} hours")
+        if name in OVERNIGHT_METRICS:
+            if today_reading and today_reading.value is not None:
+                val = today_reading.value
+                if "sleep_hours" in name:
+                    overnight_vitals.append(f"- {label}: {val:.1f} hours")
+                elif "efficiency" in name:
+                    overnight_vitals.append(f"- {label}: {round(val)}%")
+                elif "waso" in name or "latency" in name:
+                    overnight_vitals.append(f"- {label}: {round(val)} mins")
+                elif "awakenings" in name or "cough" in name or "snoring" in name:
+                    overnight_vitals.append(f"- {label}: {int(val)}")
+                elif "heart_rate" in name:
+                    overnight_vitals.append(f"- {label}: {round(val)} bpm")
+                elif "oxygen" in name:
+                    overnight_vitals.append(f"- {label}: {round(val)}%")
+                elif "rate" in name:
+                    overnight_vitals.append(f"- {label}: {val:.1f} breaths/min")
                 else:
-                    yesterday_vitals.append(f"- {label}: {selected_val}")
-                
-    vitals_bullet = "\n".join(yesterday_vitals) if yesterday_vitals else "No vital logs recorded yesterday."
+                    overnight_vitals.append(f"- {label}: {val}")
+        elif name in CUMULATIVE_METRICS or name in POSITIVE_ACTIVITY_METRICS:
+            if yesterday_reading and yesterday_reading.value is not None:
+                val = yesterday_reading.value
+                if name in ("steps", "total_steps"):
+                    activity_vitals.append(f"- {label}: {int(val)} steps")
+                elif name in ("active_movement_minutes", "exercise_minutes"):
+                    activity_vitals.append(f"- {label}: {round(val)} mins")
+                elif name == "active_hours_count":
+                    activity_vitals.append(f"- {label}: {int(val)}/12 daytime active hours")
+                elif name == "avg_cadence_spm":
+                    activity_vitals.append(f"- {label}: {round(val)} spm")
+                else:
+                    activity_vitals.append(f"- {label}: {val}")
+        else:
+            reading = today_reading or yesterday_reading
+            if reading and reading.value is not None:
+                val = reading.value
+                timing = "today" if reading == today_reading else "yesterday"
+                if "heart_rate" in name:
+                    other_vitals.append(f"- {label} ({timing}): {round(val)} bpm")
+                elif "speed" in name:
+                    other_vitals.append(f"- {label} ({timing}): {val:.2f} m/s")
+                elif not name.startswith("bp_"):
+                    other_vitals.append(f"- {label} ({timing}): {val}")
+
+    overnight_bullet = "\n".join(overnight_vitals) if overnight_vitals else "No overnight vitals recorded yet this morning."
+    activity_bullet = "\n".join(activity_vitals) if activity_vitals else "No activity logs recorded yesterday."
+    other_bullet = "\n".join(other_vitals) if other_vitals else ""
+
+    vitals_sections = [
+        f"Overnight vitals (last night ending today):\n{overnight_bullet}",
+        f"Sleep duration trend (last 3 days):\n{sleep_trend_bullet}",
+        f"Activity vitals (yesterday):\n{activity_bullet}"
+    ]
+    if other_bullet:
+        vitals_sections.append(f"Other health vitals:\n{other_bullet}")
+    vitals_bullet = "\n\n".join(vitals_sections)
     
     # 2. Fetch MedGemma Diagnostics active alerts from DB instead of generating synchronously
     try:
@@ -1402,7 +1473,7 @@ async def generate_medgemma_summary(patient_id: str, patient_name: str = "your l
 
     prompt = f"""You are MedGemma, writing a brief, encouraging morning health summary addressed directly to an elderly senior user about how their day went yesterday and how they are doing today.
 
-Here are their logged health metrics for yesterday:
+Here are their logged health metrics:
 {vitals_bullet}
 
 Clinical findings:

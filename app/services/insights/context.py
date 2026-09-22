@@ -85,6 +85,20 @@ class VitalsMetric:
         return self.data[-1].date.isoformat()
 
     @property
+    def has_today(self) -> bool:
+        """Returns True if the most recent reading was recorded today."""
+        if not self.data:
+            return False
+        return self.data[-1].date == self._get_today_local()
+
+    @property
+    def today_value(self) -> Optional[float]:
+        """Returns today's reading value if recorded today, else None."""
+        if self.has_today:
+            return self.data[-1].value
+        return None
+
+    @property
     def latest_completed(self) -> float:
         """
         Returns the latest reading from a completed calendar day (date < today_local).
