@@ -672,24 +672,30 @@ def build_plan_context(patient_id: str, phone_location: str = None) -> Dict[str,
     except Exception as e:
         print(f"Warning: Could not fetch previous plans: {e}")
 
-    # ── Run Insights Engine ──
+    # ── Fetch Clinical Alerts (from active_clinical_insights table) ──
     active_insights = []
     try:
-        from app.services.insights.engine import engine
-        output = engine.evaluate_patient(patient_id)
-        # Extract Tier 4 derived data only (no raw PHI)
-        for insight in output.active_insights:
-            active_insights.append({
-                "rule_id": insight.rule_id,
-                "name": insight.name,
-                "severity": insight.severity.value,
-                "message": insight.message,
-                "category": insight.category.value,
-                "is_stale": getattr(insight, 'is_stale', False)
-            })
-            
-        # Also fetch recently resolved_stale insights from DB to pass to LLM coaching
-        stale_cutoff = (datetime.now() - timedelta(hours=48)).isoformat()
+        alert_resp = supabase.table("active_clinical_insights") \
+            .select("rule_id, name, severity, message, category") \
+            .eq("patient_id", patient_id) \
+            .eq("status", "active") \
+            .execute()
+        if alert_resp.data:
+            for alert in alert_resp.data:
+                active_insights.append({
+                    "rule_id": alert.get("rule_id", ""),
+                    "name": alert.get("name", "Alert"),
+                    "severity": alert.get("severity", "LOW"),
+                    "message": alert.get("message", ""),
+                    "category": alert.get("category", "General"),
+                    "is_stale": False
+                })
+    except Exception as e:
+        print(f"Warning: Could not fetch active clinical insights: {e}")
+
+    # Also fetch recently resolved_stale insights from DB to pass to LLM coaching
+    try:
+        stale_cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
         stale_resp = supabase.table("active_clinical_insights") \
             .select("rule_id, name, severity, message, category") \
             .eq("patient_id", patient_id) \
@@ -698,10 +704,20 @@ def build_plan_context(patient_id: str, phone_location: str = None) -> Dict[str,
             .execute()
         if stale_resp.data:
             for s in stale_resp.data:
-                s["is_stale"] = True
-                active_insights.append(s)
-        # Fetch historical insights (overdue labs)
-        historical_insights = []
+                active_insights.append({
+                    "rule_id": s.get("rule_id", ""),
+                    "name": s.get("name", "Alert"),
+                    "severity": s.get("severity", "LOW"),
+                    "message": s.get("message", ""),
+                    "category": s.get("category", "General"),
+                    "is_stale": True
+                })
+    except Exception as e:
+        print(f"Warning: Could not fetch stale clinical insights: {e}")
+
+    # Fetch historical insights (overdue labs)
+    historical_insights = []
+    try:
         hist_resp = supabase.table("active_clinical_insights") \
             .select("name, message, updated_at") \
             .eq("patient_id", patient_id) \
@@ -709,10 +725,8 @@ def build_plan_context(patient_id: str, phone_location: str = None) -> Dict[str,
             .execute()
         if hist_resp.data:
             historical_insights = hist_resp.data
-            
     except Exception as e:
-        print(f"Warning: Insights Engine failed: {e}")
-        historical_insights = []
+        print(f"Warning: Could not fetch historical insights: {e}")
 
     # ── Lab trend alerts (RCV-filtered) ──
     lab_alerts = []

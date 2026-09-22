@@ -583,9 +583,6 @@ async def get_daily_plan(payload: DailyPlanRequest):
                 if settings.ENABLE_MEDGEMMA_PIPELINE:
                     try:
                         plan_context = build_plan_context(payload.patient_id, phone_location=payload.location)
-                        # Fetch active alerts from db
-                        alert_res = supabase.table("active_clinical_insights").select("*").eq("patient_id", payload.patient_id).eq("status", "active").execute()
-                        plan_context["active_insights"] = alert_res.data if alert_res.data else []
                         pure_medgemma_plan = await generate_medgemma_plan(plan_context)
                         
                         # Save the generated plan to the database

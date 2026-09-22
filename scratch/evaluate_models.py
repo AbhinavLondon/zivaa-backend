@@ -43,7 +43,8 @@ async def evaluate_patient(pid: str, name: str) -> str:
         
     # 3. MedGemma raw alerts
     print(f"  - Running MedGemma Diagnostics Alerts...")
-    medgemma_alerts = await generate_medgemma_alerts(ctx)
+    medgemma_alerts_raw = await generate_medgemma_alerts(ctx)
+    medgemma_alerts = medgemma_alerts_raw.get("active_insights", []) if isinstance(medgemma_alerts_raw, dict) else medgemma_alerts_raw
     
     # 4. Plan Context
     plan_ctx = build_plan_context(pid)
