@@ -35,6 +35,7 @@ user_site = os.path.expanduser("~\\AppData\\Roaming\\Python\\Python314\\site-pac
 if user_site not in sys.path and os.path.exists(user_site):
     sys.path.insert(0, user_site)
 
+import asyncio
 import httpx
 import json
 import re
@@ -73,20 +74,24 @@ class InsightsCache:
         self._cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
         self._ttl = ttl_seconds
 
-    def get(self, patient_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve cached context if it exists and hasn't expired."""
+    def get(self, patient_id: str, today_str: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Retrieve cached context if it exists, hasn't expired, and matches today's date."""
         entry = self._cache.get(patient_id)
         if entry is None:
             return None
         timestamp, data = entry
         if time.time() - timestamp > self._ttl:
-            # Expired — remove and return None
+            del self._cache[patient_id]
+            return None
+        if today_str and data.get("_plan_date") and data.get("_plan_date") != today_str:
             del self._cache[patient_id]
             return None
         return data
 
-    def set(self, patient_id: str, data: Dict[str, Any]) -> None:
+    def set(self, patient_id: str, data: Dict[str, Any], today_str: Optional[str] = None) -> None:
         """Cache the plan context for this patient."""
+        if today_str:
+            data["_plan_date"] = today_str
         self._cache[patient_id] = (time.time(), data)
 
     def invalidate(self, patient_id: str) -> None:
@@ -534,369 +539,449 @@ REGIONAL_FOODS = {
 #    Returns a rich PlanContext dict for prompt construction.
 # ═══════════════════════════════════════════════════════════════════
 
-def build_plan_context(patient_id: str, phone_location: str = None) -> Dict[str, Any]:
+async def build_plan_context(
+    patient_id: str, 
+    phone_location: Optional[str] = None,
+    phone_timezone: Optional[str] = None
+) -> Dict[str, Any]:
     """
-    Builds the full context needed for daily plan generation by:
-    1. Checking the insights cache (Tier 4 derived data, 1h TTL)
-    2. If cache miss: running the Insights Engine, fetching patient
-       demographics, today's vitals, lab trends, and medication adherence
-    3. Returning a structured PlanContext dict
+    Builds the full context needed for daily plan generation concurrently.
+    Consolidates 17 sequential blocking queries down to parallel async tasks.
+    Guarantees strict today's date checking and patient-local timezone consistency.
+    """
+    import zoneinfo
+    from app.services.insights.data_fetcher import get_async_supabase
+    from app.services.reinforcement import align_history_data, calculate_task_correlations
+    from app.services.lab_history import get_patient_lab_trends
+    from app.utils.crypto import decrypt_text
+    from app.utils.weather import get_city_temperature_async
 
-    Returns: dict with keys:
-        - patient: {name, age, sex, location, region, conditions}
-        - vitals_today: {hr, bp_sys, bp_dia, steps, sleep, glucose, ...}
-        - active_insights: [{rule_id, name, severity, message, category}]
-        - lab_alerts: [{biomarker, direction, change_pct, rate_alert}]
-        - med_adherence: {rate, missed_count}
-    """
-    # Check cache first
-    cached = _insights_cache.get(patient_id)
+    client = await get_async_supabase()
+
+    now_utc = datetime.now(timezone.utc)
+    # Query 16 days back to safely cover 14 local days across all timezones
+    fourteen_days_cutoff_str = (now_utc.date() - timedelta(days=16)).isoformat()
+    seven_days_cutoff_str = (now_utc.date() - timedelta(days=9)).isoformat()
+    now_iso = now_utc.isoformat()
+
+    # ── 1. Consolidated Native Async Task Definitions ──
+
+    async def _fetch_patient() -> Dict[str, Any]:
+        p_info = {
+            "id": patient_id, "name": "Patient", "age": None, "sex": None,
+            "location": None, "region": "North", "conditions": [],
+            "timezone": None
+        }
+        try:
+            resp = await client.table("patients") \
+                .select("full_name, date_of_birth, gender, location_city, timezone") \
+                .eq("id", patient_id) \
+                .single() \
+                .execute()
+            if resp.data:
+                p_info["name"] = resp.data.get("full_name", "Patient")
+                p_info["sex"] = (resp.data.get("gender") or "").lower() or None
+                p_info["location"] = resp.data.get("location_city")
+                p_info["timezone"] = resp.data.get("timezone")
+                p_info["region"] = get_region_from_location(p_info["location"])
+                p_info["_raw_dob"] = resp.data.get("date_of_birth")
+        except Exception as e:
+            print(f"Warning: Could not fetch patient demographics: {e}")
+        return p_info
+
+    async def _fetch_conditions() -> List[str]:
+        try:
+            cond_resp = await client.table("conditions") \
+                .select("condition_name") \
+                .eq("patient_id", patient_id) \
+                .execute()
+            if cond_resp.data:
+                return [
+                    c["condition_name"] for c in cond_resp.data if c.get("condition_name")
+                ]
+        except Exception as e:
+            print(f"Warning: Could not fetch conditions: {e}")
+        return []
+
+    async def _fetch_vitals_14d() -> List[Dict[str, Any]]:
+        try:
+            v_resp = await client.table("vitals_daily") \
+                .select("*") \
+                .eq("patient_id", patient_id) \
+                .gte("date", fourteen_days_cutoff_str) \
+                .order("date", desc=True) \
+                .execute()
+            return v_resp.data or []
+        except Exception as e:
+            print(f"Warning: Could not fetch vitals history: {e}")
+            return []
+
+    async def _fetch_plans_14d() -> List[Dict[str, Any]]:
+        try:
+            plan_resp = await client.table("daily_plans") \
+                .select("date, schedule, created_at") \
+                .eq("patient_id", patient_id) \
+                .gte("date", fourteen_days_cutoff_str) \
+                .order("created_at", desc=True) \
+                .execute()
+            return plan_resp.data or []
+        except Exception as e:
+            print(f"Warning: Could not fetch daily plans: {e}")
+            return []
+
+    async def _fetch_insights() -> List[Dict[str, Any]]:
+        try:
+            insights_resp = await client.table("active_clinical_insights") \
+                .select("rule_id, name, severity, message, category, status, updated_at") \
+                .eq("patient_id", patient_id) \
+                .in_("status", ["active", "resolved_stale", "historical"]) \
+                .execute()
+            return insights_resp.data or []
+        except Exception as e:
+            print(f"Warning: Could not fetch active clinical insights: {e}")
+            return []
+
+    async def _fetch_lab_trends() -> List[Dict[str, Any]]:
+        alerts = []
+        try:
+            trends = await asyncio.to_thread(get_patient_lab_trends, patient_id)
+            for code, summary in trends.get("trend_summary", {}).items():
+                flag = summary.get("clinical_flag", "stable")
+                if flag in ("worsening", "needs_attention"):
+                    alert = {
+                        "biomarker": summary.get("biomarker_name", code),
+                        "direction": summary.get("trend_direction", "unknown"),
+                        "change_pct": summary.get("change_percent", 0),
+                        "clinical_flag": flag,
+                    }
+                    if summary.get("rate_alert"):
+                        alert["rate_alert"] = summary["rate_alert"]
+                    alerts.append(alert)
+        except Exception as e:
+            print(f"Warning: Lab trend fetch failed: {e}")
+        return alerts
+
+    async def _fetch_meds() -> Dict[str, Any]:
+        med_adh = {"rate": None, "missed_count": 0}
+        try:
+            meds_resp = await client.table("medication_logs") \
+                .select("status, scheduled_at") \
+                .eq("patient_id", patient_id) \
+                .gte("scheduled_at", seven_days_cutoff_str) \
+                .lte("scheduled_at", now_iso) \
+                .execute()
+            rows = meds_resp.data or []
+            total = len(rows)
+            if total > 0:
+                taken = sum(1 for m in rows if m.get("status") == "taken")
+                missed = sum(1 for m in rows if m.get("status") in ("missed", "skipped"))
+                med_adh = {
+                    "rate": round((taken / total) * 100, 1),
+                    "missed_count": missed,
+                }
+        except Exception as e:
+            print(f"Warning: Medication adherence fetch failed: {e}")
+        return med_adh
+
+    async def _fetch_setup() -> Dict[str, Any]:
+        s_prefs = {}
+        try:
+            setup_resp = await client.table("patient_plan_setup") \
+                .select("*") \
+                .eq("patient_id", patient_id) \
+                .order("created_at", desc=True) \
+                .execute()
+            if setup_resp.data:
+                fields = [
+                    "primary_focus", "wake_time", "movement_level", "steps_goal", 
+                    "diet_type", "height_inches", "weight_kg", "goal_weight_kg", 
+                    "health_conditions", "evening_activities", "reminders",
+                    "target_calories_user_generated", "protein_g_user_generated", 
+                    "carbs_g_user_generated", "fat_g_user_generated", "diet_preference"
+                ]
+                for field in fields:
+                    for row in setup_resp.data:
+                        val = row.get(field)
+                        if val is not None:
+                            if isinstance(val, list) and not val:
+                                continue
+                            if isinstance(val, str) and not val.strip():
+                                continue
+                            s_prefs[field] = val
+                            break
+        except Exception as e:
+            print(f"Warning: Patient plan setup fetch failed: {e}")
+        return s_prefs
+
+    async def _fetch_nutritional() -> List[Dict[str, Any]]:
+        try:
+            nut_resp = await client.table("active_nutritional_insights") \
+                .select("rule_id, insight_name, severity, context_data, category") \
+                .eq("patient_id", patient_id) \
+                .eq("status", "active") \
+                .execute()
+            return nut_resp.data or []
+        except Exception as e:
+            print(f"Warning: Nutritional insights fetch failed: {e}")
+            return []
+
+    async def _fetch_preferences() -> List[Dict[str, Any]]:
+        try:
+            pref_resp = await client.table("patient_preferences") \
+                .select("*") \
+                .eq("patient_id", patient_id) \
+                .execute()
+            return pref_resp.data or []
+        except Exception as e:
+            print(f"Warning: Could not fetch patient preferences: {e}")
+            return []
+
+    async def _fetch_symptoms() -> List[Dict[str, Any]]:
+        syms = []
+        try:
+            sym_resp = await client.table("patient_symptoms") \
+                .select("*") \
+                .eq("patient_id", patient_id) \
+                .in_("status", ["Active", "Resolving"]) \
+                .execute()
+            if sym_resp.data:
+                for s in sym_resp.data:
+                    try:
+                        if s.get("name"):
+                            s["name"] = decrypt_text(s["name"])
+                    except Exception:
+                        pass
+                syms.extend(sym_resp.data)
+        except Exception as e:
+            print(f"Warning: Could not fetch patient symptoms: {e}")
+        return syms
+
+    async def _fetch_actions() -> List[Dict[str, Any]]:
+        try:
+            act_resp = await client.table("care_plan_actions") \
+                .select("*") \
+                .eq("patient_id", patient_id) \
+                .execute()
+            return act_resp.data or []
+        except Exception as e:
+            print(f"Warning: Could not fetch care plan actions: {e}")
+            return []
+
+    # ── 2. Run All Independent Database Queries in Parallel ──
+    results = await asyncio.gather(
+        _fetch_patient(),
+        _fetch_conditions(),
+        _fetch_vitals_14d(),
+        _fetch_plans_14d(),
+        _fetch_insights(),
+        _fetch_lab_trends(),
+        _fetch_meds(),
+        _fetch_setup(),
+        _fetch_nutritional(),
+        _fetch_preferences(),
+        _fetch_symptoms(),
+        _fetch_actions(),
+    )
+
+    patient_info = results[0]
+    patient_info["conditions"] = results[1]
+    vitals_rows = results[2]
+    plan_rows = results[3]
+    insights_rows = results[4]
+    lab_alerts = results[5]
+    med_adherence = results[6]
+    setup_prefs = results[7]
+    nutritional_insights = results[8]
+    preferences = results[9]
+    symptoms = results[10]
+    raw_actions = results[11]
+
+    # ── 3. Resolve Patient Local Timezone & Date Boundaries ──
+    pt_tz_str = phone_timezone or patient_info.get("timezone") or "Asia/Kolkata"
+    try:
+        patient_tz = zoneinfo.ZoneInfo(pt_tz_str)
+    except Exception:
+        try:
+            patient_tz = zoneinfo.ZoneInfo("Asia/Kolkata")
+            pt_tz_str = "Asia/Kolkata"
+        except Exception:
+            patient_tz = timezone.utc
+            pt_tz_str = "UTC"
+
+    patient_info["timezone"] = pt_tz_str
+    now_local = datetime.now(patient_tz)
+    today_str = now_local.date().isoformat()
+    yesterday_str = (now_local.date() - timedelta(days=1)).isoformat()
+    current_weekday = now_local.strftime("%A").lower()
+
+    # Check cache with verified patient today_str
+    cached = _insights_cache.get(patient_id, today_str=today_str)
     if cached is not None:
         return cached
 
-    from app.services.insights.data_fetcher import supabase
-
-    # ── Patient demographics ──
-    patient_info = {"id": patient_id, "name": "Patient", "age": None, "sex": None,
-                    "location": None, "region": "North", "conditions": []}
-    try:
-        resp = supabase.table("patients") \
-            .select("full_name, date_of_birth, gender, location_city") \
-            .eq("id", patient_id) \
-            .single() \
-            .execute()
-        if resp.data:
-            patient_info["name"] = resp.data.get("full_name", "Patient")
-            patient_info["sex"] = (resp.data.get("gender") or "").lower() or None
-            patient_info["location"] = resp.data.get("location_city")
-            patient_info["region"] = get_region_from_location(
-                patient_info["location"])
-            dob = resp.data.get("date_of_birth")
-            if dob:
-                birth = None
-                if isinstance(dob, str):
-                    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m-%d-%Y", "%d/%m/%Y", "%Y/%m/%d"):
-                        try:
-                            birth = datetime.strptime(dob, fmt).date()
-                            break
-                        except ValueError:
-                            continue
-                else:
-                    birth = dob
-                if birth:
-                    patient_info["age"] = (datetime.now().date() - birth).days // 365
-            
-            # Fetch Temperature
-            target_city = phone_location or patient_info.get("location")
-            if target_city:
-                from app.utils.weather import get_city_temperature
-                patient_info["temperature"] = get_city_temperature(target_city)
-                    
-    except Exception as e:
-        print(f"Warning: Could not fetch patient demographics: {e}")
-
-    # ── Fetch conditions ──
-    try:
-        cond_resp = supabase.table("conditions") \
-            .select("condition_name") \
-            .eq("patient_id", patient_id) \
-            .execute()
-        if cond_resp.data:
-            patient_info["conditions"] = [
-                c["condition_name"] for c in cond_resp.data
-                if c.get("condition_name")
-            ]
-    except Exception:
-        pass  # conditions table may not exist yet
-
-    # ── Vitals History (Last 7 Days) ──
-    vitals_today = {}
-    vitals_history = []
-    try:
-        today_str = datetime.now().date().isoformat()
-        seven_days_ago_str = (datetime.now().date() - timedelta(days=7)).isoformat()
-        v_resp = supabase.table("vitals_daily") \
-            .select("*") \
-            .eq("patient_id", patient_id) \
-            .gte("date", seven_days_ago_str) \
-            .order("date", desc=True) \
-            .execute()
-        
-        if v_resp.data:
-            vitals_history = v_resp.data
-            
-            # The most recent row is typically "today" (or yesterday if today isn't logged yet)
-            row = v_resp.data[0]
-            vitals_today = {
-                "avg_heart_rate": row.get("avg_heart_rate"),
-                "bp_systolic": row.get("bp_systolic"),
-                "bp_diastolic": row.get("bp_diastolic"),
-                "steps": row.get("total_steps", 0),
-                "sleep_hours": row.get("sleep_hours"),
-                "blood_glucose": row.get("blood_glucose_avg"),
-                "oxygen_sat": row.get("oxygen_sat_avg"),
-                "body_temp": row.get("body_temp_avg"),
-                "skin_temp_delta": row.get("skin_temperature_delta"),
-                "weight": row.get("weight_kg"),
-                "mood_score": row.get("mood_score"),
-                "avg_cadence_spm": row.get("avg_cadence_spm"),
-                "active_movement_minutes": row.get("active_movement_minutes"),
-                "active_hours_count": row.get("active_hours_count"),
-            }
-    except Exception as e:
-        print(f"Warning: Could not fetch vitals history: {e}")
-
-    # ── Previous Plan & Recent Meals ──
-    previous_plan = {}
-    recent_meals = []
-    try:
-        plan_resp = supabase.table("daily_plans") \
-            .select("schedule, date") \
-            .eq("patient_id", patient_id) \
-            .order("created_at", desc=True) \
-            .limit(3) \
-            .execute()
-        if plan_resp.data:
-            previous_plan = plan_resp.data[0].get("schedule", {})
-            for row in plan_resp.data:
-                schedule = row.get("schedule", {})
-                for period in ["morning", "afternoon", "evening", "night"]:
-                    tasks = schedule.get(period, [])
-                    if isinstance(tasks, list):
-                        for t in tasks:
-                            category = (t.get("category") or "").lower()
-                            task_name = t.get("task", "")
-                            if any(kw in category for kw in ["breakfast", "lunch", "dinner", "meal", "snack"]) or \
-                               any(kw in task_name.lower() for kw in ["breakfast", "lunch", "dinner"]):
-                                recent_meals.append(task_name)
-    except Exception as e:
-        print(f"Warning: Could not fetch previous plans: {e}")
-
-    # ── Fetch Clinical Alerts (from active_clinical_insights table) ──
-    active_insights = []
-    try:
-        alert_resp = supabase.table("active_clinical_insights") \
-            .select("rule_id, name, severity, message, category") \
-            .eq("patient_id", patient_id) \
-            .eq("status", "active") \
-            .execute()
-        if alert_resp.data:
-            for alert in alert_resp.data:
-                active_insights.append({
-                    "rule_id": alert.get("rule_id", ""),
-                    "name": alert.get("name", "Alert"),
-                    "severity": alert.get("severity", "LOW"),
-                    "message": alert.get("message", ""),
-                    "category": alert.get("category", "General"),
-                    "is_stale": False
-                })
-    except Exception as e:
-        print(f"Warning: Could not fetch active clinical insights: {e}")
-
-    # Also fetch recently resolved_stale insights from DB to pass to LLM coaching
-    try:
-        stale_cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
-        stale_resp = supabase.table("active_clinical_insights") \
-            .select("rule_id, name, severity, message, category") \
-            .eq("patient_id", patient_id) \
-            .eq("status", "resolved_stale") \
-            .gte("updated_at", stale_cutoff) \
-            .execute()
-        if stale_resp.data:
-            for s in stale_resp.data:
-                active_insights.append({
-                    "rule_id": s.get("rule_id", ""),
-                    "name": s.get("name", "Alert"),
-                    "severity": s.get("severity", "LOW"),
-                    "message": s.get("message", ""),
-                    "category": s.get("category", "General"),
-                    "is_stale": True
-                })
-    except Exception as e:
-        print(f"Warning: Could not fetch stale clinical insights: {e}")
-
-    # Fetch historical insights (overdue labs)
-    historical_insights = []
-    try:
-        hist_resp = supabase.table("active_clinical_insights") \
-            .select("name, message, updated_at") \
-            .eq("patient_id", patient_id) \
-            .eq("status", "historical") \
-            .execute()
-        if hist_resp.data:
-            historical_insights = hist_resp.data
-    except Exception as e:
-        print(f"Warning: Could not fetch historical insights: {e}")
-
-    # ── Lab trend alerts (RCV-filtered) ──
-    lab_alerts = []
-    try:
-        from app.services.lab_history import get_patient_lab_trends
-        trends = get_patient_lab_trends(patient_id)
-        for code, summary in trends.get("trend_summary", {}).items():
-            # Only include worsening or needs_attention biomarkers
-            flag = summary.get("clinical_flag", "stable")
-            if flag in ("worsening", "needs_attention"):
-                alert = {
-                    "biomarker": summary.get("biomarker_name", code),
-                    "direction": summary.get("trend_direction", "unknown"),
-                    "change_pct": summary.get("change_percent", 0),
-                    "clinical_flag": flag,
-                }
-                # Include published rate alert if present
-                if summary.get("rate_alert"):
-                    alert["rate_alert"] = summary["rate_alert"]
-                lab_alerts.append(alert)
-    except Exception as e:
-        print(f"Warning: Lab trend fetch failed: {e}")
-
-    # ── Medication adherence ──
-    med_adherence = {"rate": None, "missed_count": 0}
-    try:
-        seven_days_ago = (datetime.now() - timedelta(days=7)).isoformat()
-        meds_resp = supabase.table("medication_logs") \
-            .select("status") \
-            .eq("patient_id", patient_id) \
-            .gte("scheduled_at", seven_days_ago) \
-            .execute()
-        total = len(meds_resp.data)
-        if total > 0:
-            taken = sum(1 for m in meds_resp.data if m.get("status") == "taken")
-            missed = sum(1 for m in meds_resp.data
-                         if m.get("status") in ("missed", "skipped"))
-            med_adherence = {
-                "rate": round((taken / total) * 100, 1),
-                "missed_count": missed,
-            }
-    except Exception as e:
-        print(f"Warning: Medication adherence fetch failed: {e}")
-
-    # ── Task Correlations ──
-    correlations = []
-    try:
-        from app.services.reinforcement import fetch_history_data, calculate_task_correlations
-        history_data = fetch_history_data(patient_id)
-        correlations = calculate_task_correlations(history_data)
-    except Exception as e:
-        print(f"Warning: Correlations fetch failed: {e}")
-
-    # ── Patient Setup Preferences ──
-    setup_prefs = {}
-    try:
-        setup_resp = supabase.table("patient_plan_setup") \
-            .select("*") \
-            .eq("patient_id", patient_id) \
-            .order("created_at", desc=True) \
-            .execute()
-        if setup_resp.data:
-            fields = [
-                "primary_focus", "wake_time", "movement_level", "steps_goal", 
-                "diet_type", "height_inches", "weight_kg", "goal_weight_kg", 
-                "health_conditions", "evening_activities", "reminders",
-                "target_calories_user_generated", "protein_g_user_generated", 
-                "carbs_g_user_generated", "fat_g_user_generated", "diet_preference"
-            ]
-            for field in fields:
-                for row in setup_resp.data:
-                    val = row.get(field)
-                    if val is not None:
-                        # For lists, empty is considered null per user request
-                        if isinstance(val, list) and not val:
-                            continue
-                        # For strings, empty is considered null
-                        if isinstance(val, str) and not val.strip():
-                            continue
-                        setup_prefs[field] = val
-                        break
-    except Exception as e:
-        print(f"Warning: Patient plan setup fetch failed: {e}")
-
-    # ── Fetch patient preferences and symptoms (Domain-Driven Care Model) ──
-    preferences = []
-    symptoms = []
-    try:
-        # 1. Fetch permanent preferences
-        pref_resp = supabase.table("patient_preferences") \
-            .select("*") \
-            .eq("patient_id", patient_id) \
-            .execute()
-        if pref_resp.data:
-            preferences.extend(pref_resp.data)
-            
-        # 2. Fetch active/resolving symptoms
-        sym_resp = supabase.table("patient_symptoms") \
-            .select("*") \
-            .eq("patient_id", patient_id) \
-            .in_("status", ["Active", "Resolving"]) \
-            .execute()
-            
-        if sym_resp.data:
-            from app.utils.crypto import decrypt_text
-            for s in sym_resp.data:
+    # Calculate age accurately in patient local time
+    dob = patient_info.pop("_raw_dob", None)
+    if dob:
+        birth = None
+        if isinstance(dob, str):
+            for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m-%d-%Y", "%d/%m/%Y", "%Y/%m/%d"):
                 try:
-                    if s.get("name"):
-                        s["name"] = decrypt_text(s["name"])
-                except Exception:
-                    pass
-            symptoms.extend(sym_resp.data)
-            
-    except Exception as e:
-        print(f"Warning: Could not fetch patient preferences/symptoms for {patient_id}: {e}")
+                    birth = datetime.strptime(dob, fmt).date()
+                    break
+                except ValueError:
+                    continue
+        else:
+            birth = dob
+        if birth:
+            patient_info["age"] = (now_local.date() - birth).days // 365
 
+    # ── 4. Filter Care Actions with Local Current Weekday ──
     agreed_actions = []
     suggested_actions = []
-    try:
-        act_resp = supabase.table("care_plan_actions") \
-            .select("*") \
-            .eq("patient_id", patient_id) \
-            .execute()
-        if act_resp.data:
-            current_weekday = datetime.now(timezone.utc).strftime("%A").lower()
-            filtered_agreed = []
-            for a in act_resp.data:
-                st = a.get("status")
-                # Only include active agreed actions (skip Paused, Abandoned, Archived, Completed one-offs)
-                if st != "Agreed":
+    for a in raw_actions:
+        st = a.get("status")
+        if st == "Agreed":
+            cadence = (a.get("cadence") or "daily").lower()
+            if cadence.startswith("weekly_"):
+                target_day = cadence.replace("weekly_", "")
+                if target_day != current_weekday:
                     continue
-                cadence = (a.get("cadence") or "daily").lower()
-                if cadence.startswith("weekly_"):
-                    target_day = cadence.replace("weekly_", "")
-                    if target_day != current_weekday:
-                        continue  # Skip periodic actions on non-designated days
-                filtered_agreed.append(a)
-            agreed_actions = filtered_agreed
-            suggested_actions = [a for a in act_resp.data if a.get("status") == "Suggested"]
-    except Exception as e:
-        print(f"Warning: Could not fetch care plan actions for {patient_id}: {e}")
+            agreed_actions.append(a)
+        elif st == "Suggested":
+            suggested_actions.append(a)
 
-    # ── Fetch Nutritional Insights ──
-    nutritional_insights = []
-    try:
-        nut_resp = supabase.table("active_nutritional_insights") \
-            .select("rule_id, insight_name, severity, context_data, category") \
-            .eq("patient_id", patient_id) \
-            .eq("status", "active") \
-            .execute()
-        if nut_resp.data:
-            nutritional_insights = nut_resp.data
-    except Exception as e:
-        print(f"Warning: Nutritional insights fetch failed: {e}")
+    # ── 5. Resolve Location & Fetch Weather (Async with 30m in-memory cache) ──
+    target_city = phone_location or patient_info.get("location")
+    if not target_city and pt_tz_str and "/" in pt_tz_str:
+        inferred_city = pt_tz_str.split("/")[-1].replace("_", " ")
+        if inferred_city.lower() != "utc":
+            target_city = inferred_city
+    if not target_city:
+        target_city = "Delhi"
 
-    # ── Fetch Existing Pre-Planned Schedule (from Weekly Planner) ──
+    # Ensure patient_info["location"] and region are populated
+    if not patient_info.get("location"):
+        patient_info["location"] = target_city
+        patient_info["region"] = get_region_from_location(target_city)
+
+    patient_info["temperature"] = await get_city_temperature_async(target_city)
+
+    # ── 6. In-Memory Slicing & Parsing (Zero Additional Database Queries) ──
+
+    def _norm_d(d_val: Any) -> str:
+        if not d_val:
+            return ""
+        return str(d_val)[:10]
+
+    # A. Vitals today & history: strictly verify today's date
+    vitals_today = {}
+    today_vitals_row = next((r for r in vitals_rows if _norm_d(r.get("date")) == today_str), None)
+    if today_vitals_row:
+        vitals_today = {
+            "avg_heart_rate": today_vitals_row.get("avg_heart_rate"),
+            "bp_systolic": today_vitals_row.get("bp_systolic"),
+            "bp_diastolic": today_vitals_row.get("bp_diastolic"),
+            "steps": today_vitals_row.get("total_steps", 0),
+            "sleep_hours": today_vitals_row.get("sleep_hours"),
+            "blood_glucose": today_vitals_row.get("blood_glucose_avg"),
+            "oxygen_sat": today_vitals_row.get("oxygen_sat_avg"),
+            "body_temp": today_vitals_row.get("body_temp_avg"),
+            "skin_temp_delta": today_vitals_row.get("skin_temperature_delta"),
+            "weight": today_vitals_row.get("weight_kg"),
+            "mood_score": today_vitals_row.get("mood_score"),
+            "avg_cadence_spm": today_vitals_row.get("avg_cadence_spm"),
+            "active_movement_minutes": today_vitals_row.get("active_movement_minutes"),
+            "active_hours_count": today_vitals_row.get("active_hours_count"),
+        }
+
+    # vitals_history contains completed preceding days strictly before today
+    vitals_history = [r for r in vitals_rows if _norm_d(r.get("date")) < today_str][:7]
+    if not vitals_history and vitals_rows:
+        vitals_history = vitals_rows[:7]
+
+    # B. Daily plans slicing: existing_plan, previous_plan, recent_meals
     existing_plan = {}
-    try:
-        today_str = datetime.now(timezone.utc).date().isoformat()
-        plan_resp = supabase.table("daily_plans") \
-            .select("schedule") \
-            .eq("patient_id", patient_id) \
-            .eq("date", today_str) \
-            .execute()
-        if plan_resp.data and plan_resp.data[0].get("schedule"):
-            existing_plan = plan_resp.data[0].get("schedule")
-    except Exception as e:
-        print(f"Warning: Could not fetch existing pre-planned schedule: {e}")
+    previous_plan = {}
+    recent_meals = []
 
-    # ── Assemble plan context ──
+    for r in plan_rows:
+        r_date = _norm_d(r.get("date"))
+        schedule = r.get("schedule")
+        if not schedule:
+            continue
+        if r_date == today_str and not existing_plan:
+            existing_plan = schedule
+        elif r_date == yesterday_str and not previous_plan:
+            previous_plan = schedule
+
+    # If no plan specifically for yesterday, pick the latest plan strictly before today
+    if not previous_plan:
+        for r in plan_rows:
+            r_date = _norm_d(r.get("date"))
+            if r_date < today_str and r.get("schedule"):
+                previous_plan = r.get("schedule")
+                break
+
+    # Recent meals should strictly come from prior days (not today) to ensure dietary variety
+    prior_plans = [r for r in plan_rows if _norm_d(r.get("date")) < today_str]
+    for row in prior_plans[:3]:
+        schedule = row.get("schedule", {})
+        if isinstance(schedule, dict):
+            for period in ["morning", "afternoon", "evening", "night"]:
+                tasks = schedule.get(period, [])
+                if isinstance(tasks, list):
+                    for t in tasks:
+                        category = (t.get("category") or "").lower()
+                        task_name = t.get("task", "")
+                        if any(kw in category for kw in ["breakfast", "lunch", "dinner", "meal", "snack"]) or \
+                           any(kw in task_name.lower() for kw in ["breakfast", "lunch", "dinner"]):
+                            recent_meals.append(task_name)
+
+    # C. Task Correlations (Calculated in-memory from pre-fetched 14-day data)
+    correlations = []
+    try:
+        plans_by_date = {_norm_d(r.get("date")): r.get("schedule", {}) for r in plan_rows if r.get("date")}
+        vitals_by_date = {_norm_d(r.get("date")): r for r in vitals_rows if r.get("date")}
+        aligned_data = align_history_data(plans_by_date, vitals_by_date)
+        correlations = calculate_task_correlations(aligned_data)
+    except Exception as e:
+        print(f"Warning: Correlations calculation failed: {e}")
+
+    # D. Clinical Insights Partitioning
+    active_insights = []
+    historical_insights = []
+    stale_cutoff = (now_utc - timedelta(hours=48)).isoformat()
+
+    for item in insights_rows:
+        st = item.get("status")
+        if st == "active":
+            active_insights.append({
+                "rule_id": item.get("rule_id", ""),
+                "name": item.get("name", "Alert"),
+                "severity": item.get("severity", "LOW"),
+                "message": item.get("message", ""),
+                "category": item.get("category", "General"),
+                "is_stale": False
+            })
+        elif st == "resolved_stale":
+            updated_at = item.get("updated_at") or ""
+            if updated_at >= stale_cutoff:
+                active_insights.append({
+                    "rule_id": item.get("rule_id", ""),
+                    "name": item.get("name", "Alert"),
+                    "severity": item.get("severity", "LOW"),
+                    "message": item.get("message", ""),
+                    "category": item.get("category", "General"),
+                    "is_stale": True
+                })
+        elif st == "historical":
+            historical_insights.append({
+                "name": item.get("name", "Alert"),
+                "message": item.get("message", ""),
+                "updated_at": item.get("updated_at")
+            })
+
+    # ── 7. Assemble Structured Context ──
     context = {
         "patient": patient_info,
         "vitals_today": vitals_today,
@@ -917,10 +1002,28 @@ def build_plan_context(patient_id: str, phone_location: str = None) -> Dict[str,
         "nutritional_insights": nutritional_insights,
     }
 
-    # Cache the result (Tier 4 derived data only, 1h TTL)
-    _insights_cache.set(patient_id, context)
-
+    _insights_cache.set(patient_id, context, today_str=today_str)
     return context
+
+
+def build_plan_context_sync(
+    patient_id: str, 
+    phone_location: Optional[str] = None,
+    phone_timezone: Optional[str] = None
+) -> Dict[str, Any]:
+    """Synchronous wrapper for offline test scripts and synchronous callers."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, build_plan_context(patient_id, phone_location, phone_timezone))
+            return future.result()
+    else:
+        return asyncio.run(build_plan_context(patient_id, phone_location, phone_timezone))
 
 
 # ═══════════════════════════════════════════════════════════════════

@@ -30,9 +30,11 @@ def fetch_history_data(patient_id: str, days: int = 14) -> List[Dict[str, Any]]:
     vitals_res = supabase.table("vitals_daily").select("*").eq("patient_id", patient_id).gte("date", start_date).execute()
     vitals_by_date = {_normalize_date(row.get("date")): row for row in (vitals_res.data or []) if row.get("date")}
     
-    # Align data
+    return align_history_data(plans_by_date, vitals_by_date)
+
+def align_history_data(plans_by_date: Dict[str, Any], vitals_by_date: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Aligns daily plans and vitals from in-memory dictionaries for task correlation analysis."""
     aligned_data = []
-    # Get all unique dates
     all_dates = set(plans_by_date.keys()).union(set(vitals_by_date.keys()))
     for d in sorted(all_dates):
         schedule = plans_by_date.get(d) or {}

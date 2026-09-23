@@ -83,7 +83,7 @@ async def run_morning_generation_pipeline(patient_id: str):
             print(f"Inserted new morning briefing for patient {patient_id} ({today_date_str})")
 
         # 2. Generate Daily Plan
-        plan_context = build_plan_context(patient_id)
+        plan_context = await build_plan_context(patient_id, phone_timezone=pt_tz_str)
         plan = await generate_medgemma_plan(plan_context)
         
         payload_plan = {
@@ -92,7 +92,7 @@ async def run_morning_generation_pipeline(patient_id: str):
             "schedule": plan.get("schedule", {}),
             "health_context": plan.get("health_context", {}),
             "source": "gemini_llm",
-            "date": datetime.now(timezone.utc).date().isoformat(),
+            "date": today_date_str,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         

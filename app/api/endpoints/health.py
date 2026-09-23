@@ -80,6 +80,7 @@ class DailyPlanRequest(BaseModel):
     conditions: List[str] = Field(default_factory=list, description="Active chronic medical conditions")
     patient_id: Optional[str] = Field(None, description="Patient ID for insights-driven plan generation")
     location: Optional[str] = Field(None, description="Location to customize food recommendations")
+    timezone: Optional[str] = Field(None, description="Patient's current local timezone (e.g. Asia/Kolkata)")
 
 class UpdateTaskRequest(BaseModel):
     patient_id: str
@@ -567,30 +568,49 @@ async def get_daily_plan(payload: DailyPlanRequest):
             
             from datetime import datetime, time, timezone
             
-            # Check DB for pre-computed plan for today
-            today_start = datetime.combine(datetime.now(timezone.utc).date(), time.min).isoformat()
-            res = supabase.table("daily_plans").select("summary, schedule, health_context").eq("patient_id", payload.patient_id).gte("created_at", today_start).order("created_at", desc=True).limit(1).execute()
+            # 1. Fetch Plan Context (which resolves local patient timezone and today_str)
+            plan_context = await build_plan_context(
+                payload.patient_id, 
+                phone_location=payload.location,
+                phone_timezone=payload.timezone
+            )
+            patient_tz_str = plan_context.get("patient", {}).get("timezone") or "Asia/Kolkata"
+            today_str = plan_context.get("_plan_date")
+            if not today_str:
+                import zoneinfo
+                try:
+                    pt_tz = zoneinfo.ZoneInfo(patient_tz_str)
+                except Exception:
+                    pt_tz = timezone.utc
+                today_str = datetime.now(pt_tz).date().isoformat()
             
             pure_medgemma_plan = {}
-            if res.data and "schedule" in res.data[0] and res.data[0]["schedule"]:
+            if plan_context.get("existing_plan"):
                 pure_medgemma_plan = {
-                    "summary": res.data[0].get("summary", ""),
-                    "schedule": res.data[0]["schedule"],
-                    "health_context": res.data[0].get("health_context", {})
+                    "summary": "Your plan for today",
+                    "schedule": plan_context["existing_plan"],
+                    "health_context": plan_context.get("setup_prefs", {})
                 }
             else:
-                # Fallback to generate
-                if settings.ENABLE_MEDGEMMA_PIPELINE:
+                # Query DB for pre-computed plan for today matching patient local date
+                res = supabase.table("daily_plans").select("summary, schedule, health_context").eq("patient_id", payload.patient_id).eq("date", today_str).order("created_at", desc=True).limit(1).execute()
+                if res.data and "schedule" in res.data[0] and res.data[0]["schedule"]:
+                    pure_medgemma_plan = {
+                        "summary": res.data[0].get("summary", ""),
+                        "schedule": res.data[0]["schedule"],
+                        "health_context": res.data[0].get("health_context", {})
+                    }
+                elif settings.ENABLE_MEDGEMMA_PIPELINE:
+                    # Fallback to generate
                     try:
-                        plan_context = build_plan_context(payload.patient_id, phone_location=payload.location)
                         pure_medgemma_plan = await generate_medgemma_plan(plan_context)
                         
-                        # Save the generated plan to the database
+                        # Save the generated plan to the database with local patient date
                         if "error" not in pure_medgemma_plan and pure_medgemma_plan.get("schedule"):
                             try:
                                 supabase.table("daily_plans").insert({
                                     "patient_id": payload.patient_id,
-                                    "date": datetime.now(timezone.utc).date().isoformat(),
+                                    "date": today_str,
                                     "schedule": pure_medgemma_plan.get("schedule", {}),
                                     "summary": pure_medgemma_plan.get("summary", ""),
                                     "health_context": pure_medgemma_plan.get("health_context", {}),
@@ -912,7 +932,7 @@ async def compare_gemini_vs_medgemma(patient_id: str):
             })
 
         # 3. Build Plan Context (for Plans and summaries)
-        plan_ctx = build_plan_context(patient_id)
+        plan_ctx = await build_plan_context(patient_id)
 
         # 4. Trigger Gemini Pipeline and MedGemma Pipeline in Parallel
         # Run MedGemma raw diagnostics alerts

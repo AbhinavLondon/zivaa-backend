@@ -1,4 +1,5 @@
 import os
+import asyncio
 from datetime import datetime, timedelta, timezone
 from supabase import create_client, Client
 
@@ -14,6 +15,22 @@ supabase: Client = create_client(
     settings.SUPABASE_URL,
     settings.SUPABASE_SERVICE_ROLE_KEY
 )
+
+_async_supabase_client = None
+_async_supabase_loop = None
+
+async def get_async_supabase():
+    """Lazily initializes and returns the shared AsyncClient for non-blocking concurrent queries."""
+    global _async_supabase_client, _async_supabase_loop
+    current_loop = asyncio.get_running_loop()
+    if _async_supabase_client is None or _async_supabase_loop != current_loop:
+        from supabase import create_async_client
+        _async_supabase_client = await create_async_client(
+            settings.SUPABASE_URL,
+            settings.SUPABASE_SERVICE_ROLE_KEY
+        )
+        _async_supabase_loop = current_loop
+    return _async_supabase_client
 
 _VALIDITY_WINDOWS_CACHE = None
 
