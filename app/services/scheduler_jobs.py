@@ -714,7 +714,7 @@ async def run_symptom_checkins():
                 raw_name = memory.get('name')
                 symptom_name = decrypt_text(raw_name) if raw_name else "a symptom"
                 symptom_id = memory.get('id')
-                cadence = memory.get('follow_up_cadence_days', 3)
+                cadence = memory.get('checkin_cadence_days') or memory.get('follow_up_cadence_days', 3)
                 last_follow = memory.get('last_followed_up_at')
                 created = memory.get('created_at')
                 
@@ -723,22 +723,10 @@ async def run_symptom_checkins():
                 if (datetime.now(timezone.utc) - base_time).days < cadence:
                     continue # Not time yet
                     
-                # Use LLM-driven proactive coach
-                print(f"Triggering LLM check-in for symptom: {symptom_name} (Severity: {memory.get('severity')})")
-                checkin_metadata = {
-                    "type": "symptom_checkin",
-                    "symptom_id": symptom_id,
-                    "symptom_name": symptom_name,
-                    "options": ["Better", "Same", "Worse", "Completely Gone"]
-                }
-                
-                from app.services.proactive_coach import generate_proactive_message
-                await generate_proactive_message(
-                    patient_id=patient_id,
-                    trigger_type="SYMPTOM_FOLLOWUP",
-                    trigger_context=f"The patient previously reported experiencing {symptom_name} (Severity: {memory.get('severity')}). Ask them how their {symptom_name} is feeling today. Keep it short and natural, ending with a question.",
-                    metadata=checkin_metadata
-                )
+                # Use LLM-driven proactive coach with functional milestone framing
+                print(f"Triggering clinically-grounded check-in for symptom: {symptom_name} (Severity: {memory.get('severity')})")
+                from app.services.proactive_coach import generate_symptom_followup
+                await generate_symptom_followup(patient_id=patient_id, symptom=memory)
                 
                 # Mark as followed up
                 supabase.table("patient_symptoms").update({
@@ -749,6 +737,16 @@ async def run_symptom_checkins():
                 
         except Exception as e:
             print(f"Failed to run symptom checkins for {patient_id}: {e}")
+
+async def run_nightly_symptom_trajectories():
+    """Nightly clinical evaluation of active symptoms against SLAs and progression streaks."""
+    print("Running nightly symptom trajectories evaluation...")
+    from app.services.symptom_trajectory_engine import evaluate_symptom_trajectories
+    try:
+        results = await evaluate_symptom_trajectories()
+        print(f"Evaluated {len(results)} symptoms across patients.")
+    except Exception as e:
+        print(f"Failed running nightly symptom trajectories: {e}")
 
 async def run_weekly_planning():
     print("Running weekly planning...")

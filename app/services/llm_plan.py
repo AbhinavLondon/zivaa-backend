@@ -44,6 +44,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional, Tuple
 from app.config import settings
+from app.services.clinical_taxonomy.catalog import get_symptom_relief_badge
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -683,6 +684,18 @@ async def build_plan_context(
             print(f"Warning: Medication adherence fetch failed: {e}")
         return med_adh
 
+    async def _fetch_active_medications() -> List[Dict[str, Any]]:
+        try:
+            resp = await client.table("medications") \
+                .select("medication_name, dosage, timing_instruction, time_slots, frequency") \
+                .eq("patient_id", patient_id) \
+                .eq("is_active", True) \
+                .execute()
+            return resp.data or []
+        except Exception as e:
+            print(f"Warning: Could not fetch active medications: {e}")
+            return []
+
     async def _fetch_setup() -> Dict[str, Any]:
         s_prefs = {}
         try:
@@ -767,6 +780,17 @@ async def build_plan_context(
             print(f"Warning: Could not fetch care plan actions: {e}")
             return []
 
+    async def _fetch_symptom_efficacy() -> List[Dict[str, Any]]:
+        try:
+            eff_resp = await client.table("symptom_intervention_efficacy") \
+                .select("*") \
+                .eq("patient_id", patient_id) \
+                .execute()
+            return eff_resp.data or []
+        except Exception as e:
+            print(f"Warning: Could not fetch symptom efficacy: {e}")
+            return []
+
     # ── 2. Run All Independent Database Queries in Parallel ──
     results = await asyncio.gather(
         _fetch_patient(),
@@ -776,11 +800,13 @@ async def build_plan_context(
         _fetch_insights(),
         _fetch_lab_trends(),
         _fetch_meds(),
+        _fetch_active_medications(),
         _fetch_setup(),
         _fetch_nutritional(),
         _fetch_preferences(),
         _fetch_symptoms(),
         _fetch_actions(),
+        _fetch_symptom_efficacy(),
     )
 
     patient_info = results[0]
@@ -790,11 +816,13 @@ async def build_plan_context(
     insights_rows = results[4]
     lab_alerts = results[5]
     med_adherence = results[6]
-    setup_prefs = results[7]
-    nutritional_insights = results[8]
-    preferences = results[9]
-    symptoms = results[10]
-    raw_actions = results[11]
+    active_medications = results[7]
+    setup_prefs = results[8]
+    nutritional_insights = results[9]
+    preferences = results[10]
+    symptoms = results[11]
+    raw_actions = results[12]
+    efficacy_rows = results[13]
 
     # ── 3. Resolve Patient Local Timezone & Date Boundaries ──
     pt_tz_str = phone_timezone or patient_info.get("timezone") or "Asia/Kolkata"
@@ -981,6 +1009,77 @@ async def build_plan_context(
                 "updated_at": item.get("updated_at")
             })
 
+    # E. Clinical Symptoms & Intervention Efficacy Enrichment
+    symptoms_clinical = []
+    from app.services.clinical_taxonomy import get_canonical_symptom
+    for sym in symptoms:
+        c_key = sym.get("canonical_key", "")
+        sym_name = (sym.get("name") or "").lower()
+        matching_eff = [
+            e for e in efficacy_rows 
+            if (c_key and e.get("canonical_key") == c_key) or (e.get("symptom_name", "").lower() in sym_name)
+        ]
+        proven = [e["action_description"] for e in matching_eff if (e.get("efficacy_ratio") or 0) >= 0.6]
+        contra = [e["action_description"] for e in matching_eff if (e.get("negative_relief_count") or 0) >= 2]
+        
+        # Clinical Guideline Modalities for Daily Plan Cold Start & Contraindications
+        canonical = get_canonical_symptom(c_key) if c_key else None
+        guideline_modalities = []
+        guideline_contra = []
+        if canonical:
+            if not proven:
+                guideline_modalities = canonical.get("approved_modalities", [])[:2]
+            guideline_contra = canonical.get("contraindicated", [])
+
+        # Calculate SLA and Cadence Timers
+        created_at_val = sym.get("created_at")
+        days_active = 0
+        if created_at_val:
+            try:
+                c_str = str(created_at_val).replace("Z", "+00:00")
+                c_dt = datetime.fromisoformat(c_str)
+                if c_dt.tzinfo is None:
+                    c_dt = c_dt.replace(tzinfo=timezone.utc)
+                days_active = max(0, (now_utc - c_dt).days)
+            except Exception:
+                days_active = 0
+
+        max_self_care = sym.get("max_self_care_days") or 14
+        sym_status = sym.get("status") or "Active"
+        sla_breached = (days_active >= max_self_care) and (sym_status in ["Active", "Resolving", "DETERIORATING"])
+
+        cadence_days = sym.get("checkin_cadence_days") or sym.get("follow_up_cadence_days") or 3
+        last_follow = sym.get("last_followed_up_at")
+        checkin_due = False
+        if last_follow:
+            try:
+                lf_str = str(last_follow).replace("Z", "+00:00")
+                lf_dt = datetime.fromisoformat(lf_str)
+                if lf_dt.tzinfo is None:
+                    lf_dt = lf_dt.replace(tzinfo=timezone.utc)
+                checkin_due = (now_utc - lf_dt).days >= cadence_days
+            except Exception:
+                checkin_due = False
+        else:
+            checkin_due = days_active >= cadence_days
+
+        sym_entry = dict(sym)
+        sym_entry["days_active"] = days_active
+        sym_entry["max_self_care_days"] = max_self_care
+        sym_entry["sla_breached"] = sla_breached
+        sym_entry["checkin_cadence_days"] = cadence_days
+        sym_entry["checkin_due"] = checkin_due
+        sym_entry["is_pending_resolution"] = (sym.get("trajectory_status") == "PENDING_RESOLUTION")
+        sym_entry["provenance_badge"] = "MILESTONE 🎉" if sym.get("trajectory_status") == "PENDING_RESOLUTION" else None
+        sym_entry["relief_badge"] = get_symptom_relief_badge(sym)
+        sym_entry["provenance"] = proven
+        sym_entry["proven_effective"] = proven
+        # Combine personalized adverse reactions with guideline contraindications
+        all_contra = list(dict.fromkeys(contra + guideline_contra))
+        sym_entry["contraindicated"] = all_contra
+        sym_entry["guideline_modalities"] = guideline_modalities
+        symptoms_clinical.append(sym_entry)
+
     # ── 7. Assemble Structured Context ──
     context = {
         "patient": patient_info,
@@ -991,13 +1090,17 @@ async def build_plan_context(
         "active_insights": active_insights,
         "lab_alerts": lab_alerts,
         "med_adherence": med_adherence,
+        "active_medications": active_medications,
         "correlations": correlations,
         "setup_prefs": setup_prefs,
         "recent_meals": recent_meals,
         "preferences": preferences,
         "symptoms": symptoms,
+        "symptoms_clinical": symptoms_clinical,
+        "symptom_efficacy": efficacy_rows,
         "agreed_actions": agreed_actions,
         "suggested_actions": suggested_actions,
+        "raw_actions": raw_actions,
         "historical_insights": historical_insights,
         "nutritional_insights": nutritional_insights,
     }
@@ -1169,6 +1272,347 @@ def _get_condition_tasks(
     })
 
 
+def clean_task_title(text: str, max_length: int = 50) -> str:
+    """
+    Ensures task titles are concise and never chopped mid-word.
+    If text exceeds max_length, truncates cleanly at a word boundary.
+    """
+    if not text:
+        return ""
+    text = text.strip()
+    if len(text) <= max_length:
+        return text
+    truncated = text[:max_length].rsplit(" ", 1)[0].strip()
+    return truncated if truncated else text[:max_length]
+
+
+def enrich_and_escalate_schedule(
+    schedule: Dict[str, Any], 
+    plan_context: Dict[str, Any],
+    target_day: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Guarantees closed-loop execution across both LLM-generated and Fallback plans:
+    1. Direct Relational Binding: Matches tasks with agreed and suggested actions, stamping
+       care_plan_action_id, symptom_id, and canonical_key directly on each TaskItem.
+    2. Zero Dropped Agreements: Injects any active agreed actions that were not scheduled.
+    3. Clinical Safety SLA Escalation: Deterministically injects a Doctor Review task into the
+       morning schedule if days_active >= max_self_care_days.
+    4. Adaptive Cadence Check-in: Injects a Symptom Check-in task if checkin_due == True.
+    5. Tier-Aware Slot Capping: Protective priority sorting (clinical > coach > lifestyle).
+    """
+    raw_actions = plan_context.get("raw_actions") or []
+    if target_day and raw_actions:
+        day_agreed_actions = []
+        for a in raw_actions:
+            if a.get("status") == "Agreed":
+                cadence = (a.get("cadence") or "daily").lower()
+                if cadence.startswith("weekly_"):
+                    if cadence.replace("weekly_", "") != target_day.lower():
+                        continue
+                day_agreed_actions.append(a)
+    else:
+        day_agreed_actions = plan_context.get("agreed_actions", [])
+
+    suggested_actions = plan_context.get("suggested_actions", [])
+    all_care_actions = day_agreed_actions + suggested_actions
+    symptoms_clinical = plan_context.get("symptoms_clinical", [])
+
+    # Ensure all schedule slots exist
+    for slot in ["morning", "afternoon", "evening", "night"]:
+        if slot not in schedule or not isinstance(schedule[slot], list):
+            schedule[slot] = []
+
+    mobility_exercises = [str(e["id"]) for e in ExerciseCatalog.find_exercises(exercise_type="mobility", limit=2)] or ["53", "55"]
+
+    # ── 1. Map Existing Tasks to Agreed/Suggested Actions and Active Symptoms ──
+    matched_action_ids = set()
+    for period in ["morning", "afternoon", "evening", "night"]:
+        for task in schedule[period]:
+            t_action_id = str(task.get("care_plan_action_id") or task.get("anchor_id") or "")
+            matched_act = None
+
+            # A. Match by ID first across both agreed and suggested actions
+            if t_action_id:
+                for act in all_care_actions:
+                    if str(act.get("id", "")) == t_action_id:
+                        matched_act = act
+                        break
+
+            # B. Match by description similarity if not matched by ID
+            if not matched_act:
+                task_txt = (str(task.get("task", "")) + " " + str(task.get("details", ""))).lower()
+                for act in all_care_actions:
+                    act_desc = (act.get("description") or "").lower()
+                    if act_desc and (act_desc in task_txt or str(task.get("task", "")).lower() in act_desc):
+                        matched_act = act
+                        break
+
+            # C. If matched to a care plan action, stamp relational IDs
+            if matched_act:
+                act_id_str = str(matched_act["id"])
+                task["care_plan_action_id"] = act_id_str
+                task["anchor_id"] = act_id_str
+                task["tier"] = "coach"
+                if matched_act.get("status") == "Agreed":
+                    matched_action_ids.add(act_id_str)
+
+                act_symp_id = matched_act.get("symptom_id")
+                if act_symp_id:
+                    task["symptom_id"] = str(act_symp_id)
+                    sym = next((s for s in symptoms_clinical if str(s.get("id")) == str(act_symp_id)), None)
+                    if sym and sym.get("canonical_key"):
+                        task["canonical_key"] = sym.get("canonical_key")
+            elif not task.get("symptom_id"):
+                # D. Check if task matches any active symptom directly by name or site
+                task_txt = (str(task.get("task", "")) + " " + str(task.get("details", ""))).lower()
+                for sym in symptoms_clinical:
+                    sym_name = (sym.get("name") or "").lower()
+                    site = (sym.get("anatomical_site") or "").lower()
+                    if (sym_name and sym_name in task_txt) or (site and site in task_txt):
+                        task["symptom_id"] = str(sym.get("id"))
+                        task["canonical_key"] = sym.get("canonical_key")
+                        task["anchor_type"] = "symptom"
+                        break
+
+            # E. If task is symptom-anchored, ensure badge uses curated relief badge
+            if (task.get("anchor_type") == "symptom" or task.get("symptom_id")):
+                target_sym_id = str(task.get("symptom_id") or task.get("anchor_id") or "")
+                linked_sym = next(
+                    (s for s in symptoms_clinical 
+                     if str(s.get("id")) == target_sym_id or 
+                        (len(target_sym_id) >= 20 and (str(s.get("id")).startswith(target_sym_id[:20]) or target_sym_id.startswith(str(s.get("id"))[:20])))),
+                    None
+                )
+                if not linked_sym:
+                    task_txt = (str(task.get("task", "")) + " " + str(task.get("details", "")) + " " + str((task.get("provenance") or {}).get("reason", ""))).lower()
+                    for s in symptoms_clinical:
+                        s_name = (s.get("name") or "").lower()
+                        if s_name and (s_name in task_txt or any(w in task_txt for w in s_name.split() if len(w) > 4)):
+                            linked_sym = s
+                            break
+
+                if linked_sym:
+                    task["symptom_id"] = str(linked_sym["id"])
+                    task["canonical_key"] = linked_sym.get("canonical_key")
+                    curated_badge = linked_sym.get("relief_badge") or get_symptom_relief_badge(linked_sym)
+                    prov = task.get("provenance") or {}
+                    cur_b = str(prov.get("badge_text") or prov.get("badge") or "").upper()
+                    if not cur_b or cur_b.startswith("FOR ") or "RELIEF" in cur_b:
+                        prov["badge"] = curated_badge
+                        prov["badge_text"] = curated_badge
+                        task["provenance"] = prov
+
+    # ── 2. Inject Any Active Agreed Actions That Were Not Scheduled ──
+    for act in day_agreed_actions:
+        act_id_str = str(act.get("id", ""))
+        if act_id_str not in matched_action_ids:
+            desc = act.get("description", "")
+            act_type = act.get("action_type", "habit")
+            badge = "HABIT" if act_type == "habit" else ("ERRAND" if act_type == "one_off" else "COACH AGREED")
+            action_payload = resolve_task_action(act, default_mobility_ids=mobility_exercises)
+
+            sym_id_str = str(act.get("symptom_id")) if act.get("symptom_id") else None
+            sym = next((s for s in symptoms_clinical if str(s.get("id")) == sym_id_str), None) if sym_id_str else None
+
+            target_slot = "morning" if len(schedule["morning"]) < 3 else ("afternoon" if len(schedule["afternoon"]) < 2 else "evening")
+            schedule[target_slot].append({
+                "id": act_id_str or str(uuid.uuid4()),
+                "care_plan_action_id": act_id_str or None,
+                "symptom_id": sym_id_str,
+                "canonical_key": sym.get("canonical_key") if sym else None,
+                "task": clean_task_title(desc, 45),
+                "time": "10:30 AM" if target_slot == "morning" else "3:30 PM",
+                "completed": False,
+                "category": "Coach",
+                "details": f"Agreed with Coach Zivaa: {desc}",
+                "tier": "coach",
+                "anchor_type": act_type,
+                "anchor_id": act_id_str or None,
+                "provenance": {
+                    "source": "coach",
+                    "badge": badge,
+                    "badge_text": badge,
+                    "reason": "Agreed during conversation with Coach Zivaa"
+                },
+                "action": action_payload
+            })
+            matched_action_ids.add(act_id_str)
+
+    # ── 3. Deterministically Enforce Clinical SLA Escalation (max_self_care_days) ──
+    # Check if a doctor appointment, clinical consult, or SLA alert is already in the schedule
+    has_doc_review = any(
+        (t.get("action") or {}).get("type") == "CALL_PHONE" or
+        (t.get("action") or {}).get("target") == "doctor_escalation" or
+        (t.get("provenance") or {}).get("badge") == "SLA ALERT" or
+        any(kw in str(t.get("task", "")).lower() for kw in ["doctor review", "doctor appointment", "clinic appointment", "consult doctor"])
+        for period in ["morning", "afternoon", "evening", "night"] for t in schedule.get(period, [])
+    )
+
+    breached_syms = [s for s in symptoms_clinical if s.get("sla_breached")]
+    if breached_syms and not has_doc_review:
+        primary_sym = breached_syms[0]
+        sym_id_str = str(primary_sym.get("id"))
+        max_days = primary_sym.get("max_self_care_days", 14)
+        days_active = primary_sym.get("days_active", 0)
+        
+        if len(breached_syms) == 1:
+            sym_name = primary_sym.get("name", "Active Symptom")
+            task_title = f"Doctor Review: {sym_name.title()}"
+            details = f"Safety Alert: Your {sym_name} has persisted for {days_active} days (exceeding {max_days}-day self-care safety window). Please consult your doctor."
+        else:
+            first_names = ", ".join([s.get("name", "").title() for s in breached_syms[:2]])
+            if len(breached_syms) > 2:
+                first_names += f" and {len(breached_syms) - 2} other symptoms"
+            task_title = "Doctor Review: Persistent Symptoms"
+            details = f"Safety Alert: Persistent symptoms ({first_names}) have exceeded the {max_days}-day self-care safety window. Please schedule a clinical review."
+
+        escalation_task = {
+            "id": str(uuid.uuid4()),
+            "care_plan_action_id": None,
+            "symptom_id": sym_id_str,
+            "canonical_key": primary_sym.get("canonical_key"),
+            "task": clean_task_title(task_title, 48),
+            "time": "9:00 AM",
+            "completed": False,
+            "category": "Vitals",
+            "tier": "clinical",
+            "anchor_type": "symptom",
+            "anchor_id": sym_id_str,
+            "status": "pending",
+            "details": details,
+            "action": {
+                "type": "CALL_PHONE",
+                "action_type": "CALL_PHONE",
+                "cta_label": "Consult Doctor",
+                "target": "doctor_escalation"
+            },
+            "provenance": {
+                "source": "clinical_safety",
+                "badge": "SLA ALERT",
+                "badge_text": "SLA ALERT",
+                "reason": f"Active symptom exceeded {max_days}-day self-care safety threshold."
+            }
+        }
+        schedule["morning"].insert(0, escalation_task)
+
+    # ── 3B. Deterministically Enforce Milestone Closure Confirmation (PENDING_RESOLUTION) ──
+    for sym in symptoms_clinical:
+        if sym.get("is_pending_resolution") and not sym.get("sla_breached"):
+            sym_id_str = str(sym.get("id"))
+            existing_milestone = any(
+                str(t.get("symptom_id")) == sym_id_str and (t.get("provenance") or {}).get("badge") == "MILESTONE 🎉"
+                for period in ["morning", "afternoon", "evening", "night"] for t in schedule.get(period, [])
+            )
+            if not existing_milestone:
+                sym_name = sym.get("name", "Active Symptom")
+                milestone_task = {
+                    "id": str(uuid.uuid4()),
+                    "care_plan_action_id": None,
+                    "symptom_id": sym_id_str,
+                    "canonical_key": sym.get("canonical_key"),
+                    "task": clean_task_title(f"Recovery Check: {sym_name.title()}", 48),
+                    "time": "10:30 AM",
+                    "completed": False,
+                    "category": "Coach",
+                    "tier": "coach",
+                    "anchor_type": "symptom",
+                    "anchor_id": sym_id_str,
+                    "status": "needs_checkin",
+                    "details": f"Wonderful news! Your {sym_name} discomfort has reached zero. Let's confirm with Coach Zivaa if you are fully healed.",
+                    "action": {
+                        "type": "COACH_CHAT",
+                        "action_type": "COACH_CHAT",
+                        "cta_label": "Celebrate with Zivaa",
+                        "prefilled_prompt": f"Coach Zivaa, my {sym_name} discomfort has reached zero. Let's see if we should close this symptom."
+                    },
+                    "provenance": {
+                        "source": "coach",
+                        "badge": "MILESTONE 🎉",
+                        "badge_text": "MILESTONE 🎉",
+                        "reason": "Pain score reached zero. Ready for recovery celebration & confirmation."
+                    }
+                }
+                target_slot = "morning" if len(schedule["morning"]) < 3 else "afternoon"
+                schedule[target_slot].append(milestone_task)
+
+    # ── 4. Deterministically Enforce Cadence Check-ins (checkin_cadence_days) ──
+    has_checkin = any(
+        (t.get("action") or {}).get("type") == "COACH_CHAT" and (t.get("provenance") or {}).get("badge") in ["CHECK-IN", "MILESTONE 🎉"]
+        for period in ["morning", "afternoon", "evening", "night"] for t in schedule.get(period, [])
+    )
+    if not has_checkin:
+        due_syms = [s for s in symptoms_clinical if s.get("checkin_due") and not s.get("sla_breached") and not s.get("is_pending_resolution")]
+        if due_syms:
+            primary_sym = due_syms[0]
+            sym_id_str = str(primary_sym.get("id"))
+            sym_name = primary_sym.get("name", "Active Symptom")
+            cadence_days = primary_sym.get("checkin_cadence_days", 3)
+            checkin_task = {
+                "id": str(uuid.uuid4()),
+                "care_plan_action_id": None,
+                "symptom_id": sym_id_str,
+                "canonical_key": primary_sym.get("canonical_key"),
+                "task": clean_task_title(f"Check-in: {sym_name.title()}", 45),
+                "time": "11:00 AM",
+                "completed": False,
+                "category": "Coach",
+                "tier": "coach",
+                "anchor_type": "symptom",
+                "anchor_id": sym_id_str,
+                "status": "needs_checkin",
+                "details": f"Check-in: How is your {sym_name} feeling today?",
+                "action": {
+                    "type": "COACH_CHAT",
+                    "action_type": "COACH_CHAT",
+                    "cta_label": "Check-in with Zivaa",
+                    "prefilled_prompt": f"I'd like to check in on my {sym_name}."
+                },
+                "provenance": {
+                    "source": "coach",
+                    "badge": "CHECK-IN",
+                    "badge_text": "CHECK-IN",
+                    "reason": f"Scheduled {cadence_days}-day symptom follow-up."
+                }
+            }
+            target_slot = "morning" if len(schedule["morning"]) < 3 else "afternoon"
+            schedule[target_slot].append(checkin_task)
+
+    # ── 5. Tier-Aware Protective Slot Capping & Daily Cognitive Budget ──
+    # Sorts tasks by tier priority (clinical > coach > lifestyle) so critical prescriptions,
+    # vital checks, and safety alerts are never trimmed off to protect senior cognitive load.
+    tier_priority = {"clinical": 0, "coach": 1, "lifestyle": 2}
+    slot_limits = {"morning": 3, "afternoon": 2, "evening": 2, "night": 1}
+    for slot in ["morning", "afternoon", "evening", "night"]:
+        max_limit = slot_limits.get(slot, 2)
+        if len(schedule[slot]) > max_limit:
+            sorted_tasks = sorted(
+                schedule[slot],
+                key=lambda t: tier_priority.get(str(t.get("tier", "lifestyle")).lower(), 2)
+            )
+            schedule[slot] = sorted_tasks[:max_limit]
+
+    # Global Daily Cognitive Budget Capping (Strictly max 6 tasks total across the entire day)
+    total_tasks = sum(len(schedule[s]) for s in ["morning", "afternoon", "evening", "night"])
+    if total_tasks > 6:
+        all_indexed_tasks = []
+        for s in ["morning", "afternoon", "evening", "night"]:
+            for idx, task in enumerate(schedule[s]):
+                tier_val = tier_priority.get(str(task.get("tier", "lifestyle")).lower(), 2)
+                all_indexed_tasks.append((tier_val, s, idx, task))
+        
+        all_indexed_tasks.sort(key=lambda x: x[0])
+        kept_tasks = all_indexed_tasks[:6]
+
+        new_schedule = {"morning": [], "afternoon": [], "evening": [], "night": []}
+        for s in ["morning", "afternoon", "evening", "night"]:
+            slot_kept = [item[3] for item in sorted([t for t in kept_tasks if t[1] == s], key=lambda x: x[2])]
+            new_schedule[s] = slot_kept
+        schedule = new_schedule
+
+    return schedule
+
+
 def get_fallback_daily_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]:
     """
     Structured clinical fallback plan when LLM is unavailable.
@@ -1295,34 +1739,8 @@ def get_fallback_daily_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]:
         if "do deep breathing" not in seen_tasks:
             schedule["evening"].append(task)
 
-    # ── Compose agreed coach actions into schedule ──
-    agreed_coach_actions = plan_context.get("agreed_actions", [])
-    for act in agreed_coach_actions:
-        desc = act.get("description", "")
-        act_id = str(act.get("id", ""))
-        act_type = act.get("action_type", "habit")
-        badge = "HABIT" if act_type == "habit" else ("ERRAND" if act_type == "one_off" else "COACH AGREED")
-        action_payload = resolve_task_action(act, default_mobility_ids=mobility_exercises)
-            
-        target_slot = "morning" if len(schedule["morning"]) < 3 else ("afternoon" if len(schedule["afternoon"]) < 2 else "evening")
-        schedule[target_slot].append({
-            "id": act_id or str(uuid.uuid4()),
-            "task": desc[:25],
-            "time": "10:30 AM" if target_slot == "morning" else "3:30 PM",
-            "completed": False,
-            "category": "Coach",
-            "details": f"Agreed with Coach Zivaa: {desc}",
-            "tier": "coach",
-            "anchor_type": act_type,
-            "anchor_id": act_id,
-            "provenance": {"source": "coach", "badge": badge, "badge_text": badge, "reason": "Agreed during your conversation with Coach Zivaa"},
-            "action": action_payload
-        })
-
-
-    # ── Cap each slot at 4 tasks ──
-    for slot in schedule:
-        schedule[slot] = schedule[slot][:4]
+    # ── Closed-loop schedule enrichment: stamps care_plan_action_id, symptom_id, enforces SLAs ──
+    schedule = enrich_and_escalate_schedule(schedule, plan_context)
 
     # ── Build summary ──
     high_insights = [i for i in insights if i.get("severity") == "HIGH"]
@@ -1546,8 +1964,15 @@ async def generate_daily_plan(
         
     action_lines = []
     if agreed_actions:
-        action_lines.append("[AGREED ACTIONS]")
-        action_lines.extend([f"- {a.get('description', '')}" for a in agreed_actions])
+        action_lines.append("[AGREED ACTIONS (MUST BE SCHEDULED)]")
+        for a in agreed_actions:
+            act_id = a.get("id", "")
+            desc = a.get("description", "")
+            sym_id = a.get("symptom_id")
+            line = f"- [Action ID: {act_id}] {desc}"
+            if sym_id:
+                line += f" (linked symptom_id: {sym_id})"
+            action_lines.append(line)
     if suggested_actions:
         action_lines.append("\n[SUGGESTED ACTIONS]")
         action_lines.extend([f"- {a.get('description', '')}" for a in suggested_actions])
@@ -1627,9 +2052,9 @@ async def generate_daily_plan(
         - For Meals / Nutrition: set 'action': {{ 'type': 'LOG_MEAL', 'target': 'nutrition', 'cta_label': 'Snap Meal' }}.
         - For Coach / Symptom Check: set 'action': {{ 'type': 'COACH_CHAT', 'cta_label': 'Ask Zivaa', 'prefilled_prompt': '...' }}.
         - For routine / water / lights: set 'action': {{ 'type': 'CHECKBOX_ONLY', 'cta_label': 'Done' }}.
-    13. CRITICAL PROVENANCE:
+    13. CRITICAL PROVENANCE & RELATIONAL BINDING:
         - If task addresses an active health alert, set 'tier': 'clinical', 'provenance': {{ 'badge': 'NEW', 'reason': '...' }}.
-        - If task comes from Agreed Coach Actions, set 'tier': 'coach', 'anchor_id': '<action_id>', 'provenance': {{ 'badge': 'COACH AGREED' or 'HABIT', 'reason': 'Agreed with Coach Zivaa' }}.
+        - If task comes from Agreed Coach Actions, set 'tier': 'coach', 'anchor_id': '<action_id>', 'care_plan_action_id': '<action_id>', 'symptom_id': '<linked_symptom_id_if_present>', 'provenance': {{ 'badge': 'COACH AGREED' or 'HABIT', 'reason': 'Agreed with Coach Zivaa' }}.
 
 
     Format as exact JSON:
@@ -1677,6 +2102,12 @@ async def generate_daily_plan(
                     # ── Pydantic Validation ──
                     from app.services.plan_schema import DailyPlanResponse
                     validated = DailyPlanResponse.model_validate(result).model_dump()
+
+                    # Closed-loop schedule enrichment: stamps care_plan_action_id, symptom_id, enforces SLAs
+                    validated["schedule"] = enrich_and_escalate_schedule(validated["schedule"], plan_context)
+
+                    # Re-validate to guarantee clean schema serialization
+                    validated = DailyPlanResponse.model_validate(validated).model_dump()
 
                     # Attach health context for transparency
                     validated["health_context"] = {

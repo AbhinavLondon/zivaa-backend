@@ -2,7 +2,7 @@ import asyncio
 import json
 import httpx
 from typing import Dict, Any, List, Optional
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from app.config import settings
 from app.services.insights.context import EvalContext, MetricValue
 from app.services.insights.core import OVERNIGHT_METRICS, CUMULATIVE_METRICS, POSITIVE_ACTIVITY_METRICS
@@ -13,6 +13,7 @@ from app.services.multilingual import (
     get_proactive_language_directive,
     get_fallback_text,
 )
+from app.services.clinical_taxonomy.catalog import get_symptom_relief_badge
 
 async def _call_medgemma(prompt: str, json_mode: bool = False, prefill: bool = True, response_schema: Optional[Dict] = None, file_part: Optional[Dict] = None) -> str:
     """
@@ -878,7 +879,6 @@ Return ONLY valid JSON. No markdown backticks, no conversational filler, no reas
             try:
                 from app.config import settings
                 from supabase import create_client
-                from datetime import datetime, timezone, timedelta
                 supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
 
                 # Layer 3: 1-Hour Rate Limit with Clinical Escalation Override
@@ -938,7 +938,6 @@ Return ONLY valid JSON. No markdown backticks, no conversational filler, no reas
                 
         # Fallback if DB insert failed or patient_id was missing
         if "created_at" not in parsed:
-            from datetime import datetime, timezone
             parsed["created_at"] = datetime.now(timezone.utc).isoformat()
             
         return parsed
@@ -995,8 +994,20 @@ async def generate_medgemma_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]
     symptom_lines = []
     for pref in preferences:
         pref_lines.append(f"  - {pref.get('constraint_text')}")
-    for sym in symptoms:
-        symptom_lines.append(f"  - {sym.get('name')} (Status: {sym.get('status')})")
+    
+    symptoms_clinical = plan_context.get("symptoms_clinical") or symptoms
+    for sym in symptoms_clinical:
+        sym_id = sym.get("id") or "active"
+        site = sym.get("anatomical_site") or "General"
+        relief_badge = sym.get("relief_badge") or get_symptom_relief_badge(sym)
+        line = f"  - [SYMPTOM ID: {sym_id}] {sym.get('name')} (Relief Badge: {relief_badge}, Site: {site}, Status: {sym.get('status', 'Active')}, Severity: {sym.get('severity', 'Mild')})"
+        if sym.get("proven_effective"):
+            line += f"\n    * PROVEN EFFECTIVE FOR THIS PERSON: {', '.join(sym['proven_effective'])}"
+        elif sym.get("guideline_modalities"):
+            line += f"\n    * CLINICAL GUIDELINE STARTER MODALITIES TO SCHEDULE: {', '.join(sym['guideline_modalities'])}"
+        if sym.get("contraindicated"):
+            line += f"\n    * CONTRAINDICATED / AVOID: {', '.join(sym['contraindicated'])}"
+        symptom_lines.append(line)
             
     memory_str = "\n".join(pref_lines) if pref_lines else "  - No specific preferences recorded."
     symptom_str = "\n".join(symptom_lines) if symptom_lines else "  - No recent symptoms reported."
@@ -1022,9 +1033,26 @@ async def generate_medgemma_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]
     
     labs_str = "\n".join([f"  - {l.get('biomarker')}: {l.get('direction')} ({l.get('change_pct'):+.1f}%)" for l in lab_alerts]) if lab_alerts else "  - None active."
     
+    active_medications = plan_context.get("active_medications", [])
+    med_lines = []
+    if active_medications:
+        for m in active_medications:
+            m_name = m.get("medication_name", "Prescription")
+            m_dose = m.get("dosage", "")
+            m_timing = (m.get("timing_instruction") or "").replace("_", " ")
+            m_freq = (m.get("frequency") or "").replace("_", " ")
+            slots = m.get("time_slots") or []
+            times = ", ".join([s.get("time", "") for s in slots if isinstance(s, dict) and s.get("time")])
+            time_info = f" at {times}" if times else ""
+            timing_info = f" ({m_timing})" if m_timing else ""
+            med_lines.append(f"  - {m_name} {m_dose}{time_info}{timing_info} [{m_freq}]".strip())
+        meds_prescribed_str = "\n".join(med_lines)
+    else:
+        meds_prescribed_str = "  - No active prescriptions recorded."
+
     rate = med_adherence.get('rate')
     rate = rate if rate is not None else 100
-    med_section = f"Adherence: {rate:.0f}% over past 7 days. Missed: {med_adherence.get('missed_count', 0)}."
+    med_section = f"Past 7-Day Adherence: {rate:.0f}% (Missed doses: {med_adherence.get('missed_count', 0)})\nActive Prescriptions to Schedule:\n{meds_prescribed_str}"
 
     # Format vitals history dynamically to include all available metrics
     history_lines = []
@@ -1069,6 +1097,25 @@ async def generate_medgemma_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]
         history_lines.append(f"  - {date}: {metrics_str}")
         
     history_str = "\n".join(history_lines) if history_lines else "  - No history available."
+
+    # Format today's morning vitals
+    today_metrics = []
+    if vitals_today:
+        if vitals_today.get("bp_systolic") is not None and vitals_today.get("bp_diastolic") is not None:
+            today_metrics.append(f"BP {vitals_today['bp_systolic']}/{vitals_today['bp_diastolic']}")
+        if vitals_today.get("sleep_hours") is not None:
+            today_metrics.append(f"Sleep {vitals_today['sleep_hours']}h")
+        if vitals_today.get("blood_glucose") is not None:
+            today_metrics.append(f"Blood Glucose {vitals_today['blood_glucose']} mg/dL")
+        if vitals_today.get("avg_heart_rate") is not None:
+            today_metrics.append(f"Heart Rate {vitals_today['avg_heart_rate']} bpm")
+        if vitals_today.get("steps") is not None:
+            today_metrics.append(f"Steps {vitals_today['steps']}")
+        if vitals_today.get("oxygen_sat") is not None:
+            today_metrics.append(f"SpO2 {vitals_today['oxygen_sat']}%")
+        if vitals_today.get("mood_score") is not None:
+            today_metrics.append(f"Mood {vitals_today['mood_score']}/10")
+    today_vitals_str = ", ".join(today_metrics) if today_metrics else "No readings recorded yet this morning"
 
     # Format previous plan (Yesterday)
     prev_lines = []
@@ -1148,7 +1195,7 @@ async def generate_medgemma_plan(plan_context: Dict[str, Any]) -> Dict[str, Any]
         macro_targets_str = calculate_daily_macros(patient, setup_prefs)
 
     if existing_plan:
-        prompt = f"""You are MedGemma, a caring clinical guide for eldercare support.
+        prompt = f"""You are MedGemma, a caring clinical guide and personal health companion for eldercare support.
 Your task is to ADAPT the patient's pre-planned schedule for TODAY based on their immediate morning health data.
 
 PATIENT: {patient_name}, {patient_age}-year-old {patient_sex or 'patient'}
@@ -1167,8 +1214,10 @@ PRE-PLANNED SCHEDULE FOR TODAY (Generated previously):
 CARE PLAN ACTIONS (from Coach):
 {actions_bullet}
 
-ACUTE MORNING DATA (Immediate Attention Required):
-- VITALS TREND:
+ACUTE MORNING DATA & RECENT VITALS (Immediate Attention Required):
+- TODAY'S MORNING VITALS:
+  {today_vitals_str}
+- RECENT 7-DAY VITALS TREND:
 {history_str}
 - ACTIVE CLINICAL ALERTS:
 {insights_str}
@@ -1178,26 +1227,49 @@ ACUTE MORNING DATA (Immediate Attention Required):
 {labs_str}
 - OVERDUE LABS TO SCHEDULE:
 {hist_str}
-- MEDICATION STATUS:
+- ACTIVE PRESCRIPTIONS & MEDICATION STATUS:
 {med_section}
 
 INSTRUCTIONS:
-1. Review the PRE-PLANNED SCHEDULE. This contains their groceries and meal prep for today.
-2. Modify this schedule ONLY IF MEDICALLY NECESSARY based on the ACUTE MORNING DATA, OR if necessary to accommodate the USER CHAT PREFERENCES, OR to alleviate RECENT REPORTED SYMPTOMS (e.g. suggesting ginger tea for nausea, or suggesting extra rest/gentle stretches for joint pain).
-3. Example Adaptation: If the pre-plan includes a "30 Min Brisk Walk", but the CLINICAL ALERTS show a "Dangerous Blood Pressure Spike", you MUST replace the walk with "Gentle Stretching" or "Rest" and add a note explaining why.
-4. CRITICAL: You MUST explicitly schedule the 'AGREED' care plan actions into the daily schedule. You should also evaluate the 'SUGGESTED' actions and schedule them if they directly help with the patient's ACTIVE SYMPTOMS.
-5. CRITICAL: Keep distinct activities (like meals, hygiene, self-care, exercise, and medical tasks) as SEPARATE tasks. Do NOT merge unrelated activities together (e.g., do not combine breakfast and self-care).
-6. If you see a [STALE/PAUSED] clinical alert, it means we paused the alert because the underlying data is too old. You MUST seamlessly weave a task into today's schedule (e.g. a short walk for heart rate recovery) to collect fresh data for that metric.
-7. If there are overdue labs in the OVERDUE LABS TO SCHEDULE section, you MUST include "Book a lab test" in the daily checklist.
-7. If no acute clinical alerts exist, output the PRE-PLANNED SCHEDULE exactly as it is (with any modifications for USER CHAT PREFERENCES), and add a warm, reassuring morning greeting to the summary.
-8. Format the response as exact JSON. DO NOT include any markdown wraps (no backticks), greetings, summary notes, or any "Thinking Process" / reasoning text.
-9. {get_proactive_language_directive(pref_lang, content_type="plan")}
+1. Tone & Senior Empathy: Speak with warmth, dignity, and reassurance, like an experienced clinical nurse. Frame tasks as empowering micro-rituals, not clinical chores.
+2. Cognitive Budget & Zero Filler:
+   - The final schedule for TODAY must contain strictly 4 to 6 high-impact tasks total across the 4 dayparts (morning, afternoon, evening, night).
+   - Remove any low-value filler tasks (such as "Relax", "Sit quietly", "Mindful breathing" unless clinically indicated).
+   - Lean dayparts (0 to 1 tasks, e.g. in afternoon or night) are natural and encouraged.
+3. Schedule Adaptation (Anchor-Driven Priority Tiering):
+   - Tier 1 (Clinical Foundations - Mandatory): Ensure active prescribed medications are placed at designated times and instructions (e.g., before food, with food, bedtime). If there are acute alerts or overdue labs, include the necessary vitals check or "Book a lab test".
+   - Tier 2 (Coach Actions & Symptom Relief): Ensure all 'AGREED' coach actions are scheduled. Actively evaluate 'SUGGESTED' coach actions and schedule them if they directly alleviate active symptoms or respond to recent vitals changes. For symptom relief tasks, set 'anchor_type': 'symptom', 'anchor_id': exact SYMPTOM ID, and under 'provenance' set 'badge': exact Relief Badge (e.g. 'FOR KNEE RELIEF', 'FOR BLOOD SUGAR BALANCE') and explain the reason. Prioritize remedies marked 'PROVEN EFFECTIVE' and NEVER prescribe 'CONTRAINDICATED / AVOID'.
+   - Tier 3 (Supporting Micro-Habits - Lean & Non-Prescriptive): Retain exactly 1 small nutrition micro-habit for the whole day (e.g. adding roasted seeds or curd for protein, pre-meal hydration—no full recipes or macro counting) and exactly 1 evening wind-down routine.
+4. Dynamic Vitals Adaptation:
+   - Blood Pressure Spikes / Elevated Readings (Systolic > 140 or Diastolic > 90 or alert): If the pre-plan includes a "30 Min Brisk Walk" or strenuous cardio, replace it with "Gentle Stretching" or "Seated Mobility" and add a calming breathing micro-habit with a clear explanation note.
+   - Sleep Deficit (<6 hours or poor sleep): Move morning exertion later, lighten physical intensity, encourage a quiet afternoon rest, and move evening wind-down 30 minutes earlier.
+   - Blood Glucose Excursions / High Sugar Alert: Add a 10-minute post-meal stroll (shatapadi) and ensure the nutrition micro-habit focuses on fiber or protein to blunt glucose spikes.
+   - Elevated Resting Heart Rate / Stress: Add a 5-minute physiological sigh or calming breathwork micro-habit.
+5. Task Formatting & Activity Separation:
+   - In the 'task' property, provide a specific, atomic action (max 4-6 words).
+   - In the 'time' property, provide the exact time (e.g. '8:00 AM', '1:00 PM', '6:30 PM', '9:30 PM').
+   - Keep distinct activities (meals, hygiene, self-care, exercise, medications) as SEPARATE tasks. Do not merge unrelated activities together.
+   - Provide "details" capturing the why and how in exactly one clear, encouraging sentence.
+6. Interactive Mobile Action Binding:
+   - Attach an intuitive 'action' object where relevant:
+     * Vitals check -> type: 'LOG_VITALS', target: 'blood_pressure' or 'glucose', cta_label: 'Record BP' or 'Log Sugar'
+     * Nutrition micro-habit -> type: 'LOG_MEAL', target: 'nutrition', cta_label: 'Snap Meal'
+     * Mobility routine or walk -> type: 'FOLLOW_EXERCISE', target: 'routine', cta_label: 'Start Routine'
+     * Coach check-in or reflection -> type: 'COACH_CHAT', cta_label: 'Ask Zivaa'
+     * Simple routine or medication -> type: 'CHECKBOX_ONLY', cta_label: 'Done'
+7. Data Freshness & Overdue Labs:
+   - If you see a [STALE/PAUSED] clinical alert, include a task to collect fresh data for that metric.
+   - If there are overdue labs in OVERDUE LABS TO SCHEDULE, include a task to "Book a lab test".
+8. Schedule Continuity:
+   - If no acute clinical alerts, vital shifts, or symptom complaints exist, preserve the pre-planned schedule (ensuring it stays within 4-6 tasks and adheres to preferences) and add a warm, reassuring greeting to the summary.
+9. Strict JSON Output: Format the response as exact JSON matching the schema below. Do NOT include markdown codeblocks (no backticks), greetings, summary notes, or any "Thinking Process" / reasoning text.
+10. {get_proactive_language_directive(pref_lang, content_type="plan")}
 
 EXPECTED JSON SCHEMA:
 {schema_str}
 """
     else:
-        prompt = f"""You are MedGemma, a caring clinical guide for eldercare support.
+        prompt = f"""You are MedGemma, a caring clinical guide and personal health companion for eldercare support.
 Create a personalized daily care plan (morning, afternoon, evening, night) for:
 
 PATIENT: {patient_name}, {patient_age}-year-old {patient_sex or 'patient'}
@@ -1216,11 +1288,11 @@ RECENT REPORTED SYMPTOMS (From recent chat logs):
 CARE PLAN ACTIONS (from Coach):
 {actions_bullet}
 
-NUTRITIONAL TARGETS:
-  - {macro_targets_str}
+ACTIVE PRESCRIPTIONS & MEDICATION STATUS:
+{med_section}
 
-RECENT MEALS (Do NOT repeat these):
-  - {recent_meals_str}
+TODAY'S MORNING VITALS:
+  {today_vitals_str}
 
 RAW VITALS TREND (LAST 7 DAYS):
 {history_str}
@@ -1228,39 +1300,70 @@ RAW VITALS TREND (LAST 7 DAYS):
 ACTIVE CLINICAL ALERTS:
 {insights_str}
 
-ACTIVE NUTRITIONAL INSIGHTS:
-{nut_insights_str}
-
 LAB TRENDS REQUIRING ATTENTION:
 {labs_str}
 
 OVERDUE LABS TO SCHEDULE:
 {hist_str}
 
-MEDICATION STATUS:
-{med_section}
+NUTRITIONAL FOCUS & CONTEXT:
+  - Nutritional Baseline: {macro_targets_str}
+  - Active Nutritional Insights: {nut_insights_str}
+  - Recent Meals Logged: {recent_meals_str}
 
-YESTERDAY'S SCHEDULE (Review for continuity and completion and to ensure that there is variety in what you suggest):
+YESTERDAY'S SCHEDULE (Review for continuity and routine variety):
 {prev_plan_str}
 
-PATIENT HISTORICAL SUCCESS CORRELATIONS (What works for this person):
+PATIENT HISTORICAL SUCCESS CORRELATIONS (What works well for this person):
 {corr_str}
 
 INSTRUCTIONS:
-1. Write in a warm, comforting tone. Speak like a reassuring family nurse.
-2. Analyze the raw vitals for subtle trends (e.g. poor sleep, low mood). Consider the historical success correlations to see what works well for this person and weave those tasks into today's plan to boost their health. Review yesterday's schedule to maintain routine continuity, but introduce gentle variations so it doesn't get repetitive. Address incomplete tasks if relevant.
-3. Incorporate the PATIENT PREFERENCES strictly into the schedule. For instance, start the day according to their `Wake Time`, adapt physical tasks to their `Movement Level` and `Steps Goal`, and suggest meals aligned with their `Diet Type`. Include their preferred `Evening Wind-Down Preferences` in the evening/night routines. Center the overall day around their `Primary Focus`. Ensure you honor any specific requests from the USER CHAT PREFERENCES and alleviate any RECENT REPORTED SYMPTOMS.
-4. CRITICAL: You MUST explicitly schedule the 'AGREED' care plan actions into the daily schedule. You should also evaluate the 'SUGGESTED' actions and schedule them if they directly help with the patient's ACTIVE SYMPTOMS.
-5. CRITICAL: Keep distinct activities (like meals, hygiene, self-care, exercise, and medical tasks) as SEPARATE tasks. Do NOT merge unrelated activities together (e.g., do not combine breakfast and self-care).
-6. If you see a [STALE/PAUSED] clinical alert, it means we paused the alert because the underlying data is too old. You MUST seamlessly weave a task into today's schedule (e.g. a short walk for heart rate recovery) to collect fresh data for that metric.
-7. If there are overdue labs in the OVERDUE LABS TO SCHEDULE section, you MUST include "Book a lab test" in the daily checklist.
-8. CRITICAL: You MUST generate 2-3 tasks for the morning, 2-3 for afternoon, 2-3 for evening, and 2-3 for night. No more than 4 per period.
-8. CRITICAL: Provide a specific and descriptive task action in the 'task' property (not more than 1 short sentence) and the time in a separate 'time' property (e.g. '7:30 AM'). Do NOT use the 'Action | Time' format anymore.
-9. CRITICAL: Do NOT prescribe specific recipes or full meals. Instead, review the ACTIVE CLINICAL ALERTS for any Nutritional Insights, and schedule 1-2 small, habit-based tasks (e.g., 'Add a boiled egg to breakfast', 'Drink water before lunch') to help close those gaps.
-10. CRITICAL: Assign a short, canonical 1-2 word "category" to each task (e.g., 'Walking', 'Meditation', 'Breakfast', 'Relaxation') so similar tasks can be grouped analytically.
-11. CRITICAL: Provide "details" for each task. It should capture the why and how of that task in exactly one sentence that is easy to read and follow. Do not list exact macro counts for meals.
-12. Format the response as exact JSON. DO NOT include any markdown wraps (no backticks), greetings, summary notes, or any "Thinking Process" / reasoning text.
-13. {get_proactive_language_directive(pref_lang, content_type="plan")}
+1. Tone & Senior Empathy: Speak with warmth, dignity, and reassurance, like an experienced clinical nurse. Frame tasks as empowering micro-rituals, not clinical chores.
+2. Cognitive Budget & Daypart Allocation (Anchor-Driven Priority Tiering):
+   - Generate strictly 4 to 6 high-impact tasks total for the entire day across the 4 dayparts (morning, afternoon, evening, night).
+   - Do NOT generate artificial filler tasks (such as "Relax", "Sit quietly", "Mindful breathing" unless clinically necessary for acute stress/BP).
+   - Lean dayparts (0 to 1 tasks, e.g. in afternoon or night) are natural and encouraged.
+   - In the 'task' property, provide a specific, atomic action (max 4-6 words).
+   - In the 'time' property, provide the exact time (e.g. '8:00 AM', '1:00 PM', '6:30 PM', '9:30 PM').
+3. Priority Tiering Structure:
+   - Tier 1 (Clinical Foundations - Mandatory):
+     * Active prescribed medications at their designated time slots and timing instructions (e.g., before food, with food, bedtime).
+     * Acute vitals checks (if alerts or recent spikes in BP, glucose, or HR are detected) or overdue labs ("Book a lab test").
+     * Doctor safety check-ins if alerted.
+   - Tier 2 (Coach Actions & Symptom Relief - Targeted & Actionable):
+     * You MUST explicitly schedule all 'AGREED' care plan actions into the daily plan.
+     * Actively evaluate 'SUGGESTED' care plan actions and schedule them where they directly alleviate active symptoms or respond to recent vitals trends.
+     * For any task addressing an active symptom:
+       - Set 'anchor_type': 'symptom'.
+       - Set 'anchor_id': the exact SYMPTOM ID from RECENT REPORTED SYMPTOMS.
+       - Under 'provenance', set 'badge': the exact Relief Badge from RECENT REPORTED SYMPTOMS (e.g. 'FOR KNEE RELIEF', 'FOR BLOOD SUGAR BALANCE') and explain the reason.
+       - Prioritize remedies marked as 'PROVEN EFFECTIVE FOR THIS PERSON' and strictly NEVER prescribe actions marked as 'CONTRAINDICATED / AVOID'.
+   - Tier 3 (Supporting Micro-Habits - Lean & Non-Prescriptive):
+     * Nutrition Guidance: Exactly 1 small, actionable habit-based micro-change for the whole day tailored to the patient's conditions (e.g., adding a small portion of curd/dal/roasted seeds to lunch for protein, drinking warm water 15 minutes before meals, or swapping late-night sugary snacks for warm chamomile or jeera water). Do NOT prescribe rigid full-meal recipes, entire menus, or recite calorie/macro counts. In the task details, explain the biological benefit in 1 simple, practical sentence.
+     * Evening Wind-Down: Exactly 1 evening wind-down routine tailored to setup preferences.
+4. Dynamic Vitals Adaptation Directives:
+   - Blood Pressure Spikes / Elevated Readings (Systolic > 140 or Diastolic > 90 or alert): Strictly swap strenuous walking/cardio for gentle stretching, seated joint mobility, or rest. Add a calming 5-minute deep breathing or relaxation task with explicit explanation.
+   - Sleep Deficit (<6 hours or poor sleep score): Push morning exertion to later in the morning. Lighten physical intensity (e.g. gentle stroll instead of workout). Add an afternoon quiet pause/rest. Move evening wind-down 30 minutes earlier.
+   - Blood Glucose Excursions / Diabetes Alerts: Schedule a 10-minute post-meal stroll (shatapadi) right after lunch or dinner. Ensure the single nutrition micro-habit emphasizes fiber/protein to blunt glycemic spikes.
+   - Elevated Resting Heart Rate / Stress / Agitation: Incorporate a 5-minute physiological sigh or box breathing micro-habit.
+5. Activity Separation:
+   - Keep distinct activities (meals, hygiene, mobility/stretching, medications, self-care) as SEPARATE tasks. Do not merge unrelated activities together.
+6. Task Categories & Details:
+   - Assign a short, canonical 1-2 word "category" to each task ('vitals', 'medication', 'diet', 'activity', 'mindfulness', 'hydration', 'sleep', 'coach').
+   - Provide "details" capturing the why and how in exactly one clear sentence that is easy for a senior to follow.
+7. Interactive Mobile Action Binding:
+   - Attach an intuitive 'action' object where relevant:
+     * Vitals check -> type: 'LOG_VITALS', target: 'blood_pressure' or 'glucose', cta_label: 'Record BP' or 'Log Sugar'
+     * Nutrition micro-habit -> type: 'LOG_MEAL', target: 'nutrition', cta_label: 'Snap Meal'
+     * Mobility routine or walk -> type: 'FOLLOW_EXERCISE', target: 'routine', cta_label: 'Start Routine'
+     * Coach check-in or reflection -> type: 'COACH_CHAT', cta_label: 'Ask Zivaa'
+     * Personal routine or medication -> type: 'CHECKBOX_ONLY', cta_label: 'Done'
+8. Data Freshness & Overdue Labs:
+   - If a clinical alert is marked [STALE/PAUSED], weave a short task (e.g. a gentle walk or resting pause) into today's schedule to collect fresh readings.
+   - If there are overdue labs in OVERDUE LABS TO SCHEDULE, include a task to "Book a lab test".
+9. Strict JSON Output:
+   - Output exact JSON only matching the schema below. Do not wrap in markdown code blocks, do not add introductory greetings or "Thinking Process" text.
+10. {get_proactive_language_directive(pref_lang, content_type="plan")}
 
 EXPECTED JSON SCHEMA:
 {schema_str}
@@ -1273,6 +1376,11 @@ EXPECTED JSON SCHEMA:
         
         # ── Pydantic Validation ──
         validated = DailyPlanResponse.model_validate(result).model_dump()
+        
+        # Closed-loop schedule enrichment: stamps care_plan_action_id, symptom_id, enforces SLAs
+        from app.services.llm_plan import enrich_and_escalate_schedule
+        validated["schedule"] = enrich_and_escalate_schedule(validated["schedule"], plan_context)
+        validated = DailyPlanResponse.model_validate(validated).model_dump()
         
         validated["health_context"] = {
             "conditions_addressed": patient_conditions,

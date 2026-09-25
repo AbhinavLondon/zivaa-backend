@@ -2,6 +2,15 @@ import uuid
 from pydantic import BaseModel, Field, model_validator
 from typing import List, Optional, Dict, Any
 
+def is_valid_uuid(val: Any) -> bool:
+    if not val:
+        return False
+    try:
+        uuid.UUID(str(val))
+        return True
+    except (ValueError, TypeError, AttributeError):
+        return False
+
 class TaskProvenance(BaseModel):
     source: Optional[str] = Field(default=None, description="Origin: 'system', 'coach', 'prescription', 'habit'.")
     badge_text: Optional[str] = Field(default=None, description="Optional visual badge: 'NEW', 'UPDATED', 'From Coach Zivaa', 'Habit', 'Errand'.")
@@ -50,6 +59,9 @@ class TaskItem(BaseModel):
     tier: str = Field(default="lifestyle", description="'clinical', 'lifestyle', or 'coach'.")
     anchor_type: str = Field(default="lifestyle", description="'symptom', 'one_off', 'habit', 'periodic', 'clinical_rule', 'lifestyle'.")
     anchor_id: Optional[str] = Field(default=None, description="Optional foreign key or rule_id.")
+    care_plan_action_id: Optional[str] = Field(default=None, description="UUID of linked care_plan_actions record.")
+    symptom_id: Optional[str] = Field(default=None, description="UUID of linked patient_symptoms record.")
+    canonical_key: Optional[str] = Field(default=None, description="Clinical taxonomy canonical key, e.g. MSK_KNEE_OA_FLARE.")
     status: str = Field(default="pending", description="'pending', 'completed', 'dismissed', 'needs_checkin'.")
     details: str = Field(..., description="One sentence explaining the why and how of the task. Easy to read and follow.")
     provenance: Optional[TaskProvenance] = Field(default=None)
@@ -59,8 +71,17 @@ class TaskItem(BaseModel):
     @classmethod
     def set_defaults(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            if not data.get("id"):
+            # Ensure task ID is a valid RFC-4122 UUID; replace hallucinated or malformed IDs
+            task_id = data.get("id")
+            if not task_id or not is_valid_uuid(task_id):
                 data["id"] = str(uuid.uuid4())
+
+            # Sanitize symptom_id and care_plan_action_id if present but not valid UUIDs
+            if data.get("symptom_id") and not is_valid_uuid(data.get("symptom_id")):
+                data["symptom_id"] = None
+            if data.get("care_plan_action_id") and not is_valid_uuid(data.get("care_plan_action_id")):
+                data["care_plan_action_id"] = None
+
             # Ensure action defaults sensibly based on category if omitted
             if not data.get("action"):
                 cat = str(data.get("category", "")).lower()
@@ -103,6 +124,9 @@ def get_gemini_schema():
             "tier": {"type": "string", "description": "'clinical', 'lifestyle', or 'coach'."},
             "anchor_type": {"type": "string", "description": "'symptom', 'one_off', 'habit', 'periodic', 'clinical_rule', or 'lifestyle'."},
             "anchor_id": {"type": "string", "description": "Optional linked symptom UUID, care plan action UUID, or clinical rule ID."},
+            "care_plan_action_id": {"type": "string", "description": "UUID of linked care_plan_actions record, if applicable."},
+            "symptom_id": {"type": "string", "description": "UUID of linked patient_symptoms record, if applicable."},
+            "canonical_key": {"type": "string", "description": "Clinical taxonomy canonical key, e.g. MSK_KNEE_OA_FLARE."},
             "status": {"type": "string", "description": "'pending', 'completed', 'dismissed', 'needs_checkin'."},
             "details": {"type": "string", "description": "One sentence explaining the why and how of the task."},
             "provenance": {

@@ -212,4 +212,16 @@ def setup_cron_jobs():
         misfire_grace_time=None
     )
     
+    # Run nightly closed-loop symptom trajectory evaluation & SLA escalation (Target: 2:30 AM)
+    from app.services.scheduler_jobs import run_nightly_symptom_trajectories
+    scheduler.add_job(
+        run_nightly_symptom_trajectories,
+        'cron',
+        hour=2,
+        minute=30,
+        id='nightly_symptom_trajectories_job',
+        replace_existing=True,
+        misfire_grace_time=None
+    )
+    
     print("Cron jobs configured.")

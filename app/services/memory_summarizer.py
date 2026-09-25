@@ -3,11 +3,13 @@ import json
 import uuid
 import re
 import httpx
+from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone, timedelta
 from app.config import settings
 from app.services.insights.data_fetcher import supabase
 from app.utils.crypto import encrypt_text, decrypt_text
 from app.services.multilingual import get_clinical_normalization_directive
+from app.services.clinical_taxonomy import resolve_symptom_and_actions
 
 SYSTEM_PROMPT = """You are an AI Memory Extraction engine for a senior care application.
 Your job is to read a recent conversation between a patient and their AI Health Coach and extract structured clinical memory facts.
@@ -16,10 +18,16 @@ CRITICAL CLINICAL RULES:
 1. Trait vs. State: If it is a permanent constraint (e.g., "Prefers morning walks", "Vegan"), it is a preference. If it is a temporary health state, it is a symptom.
 2. Diagnoses are NOT Symptoms: Do not extract known medical conditions (e.g., Diabetes, Hypertension) as temporary symptoms.
 3. Medications are NOT Actions: Do not extract medication routines as generic actions; place them ONLY in the medications list.
-4. Entity Resolution: You must check the existing active symptoms, actions, and medications before extracting a new one. If the user mentions an issue conceptually identical to an existing one, output an 'update' rather than creating a new one.
-5. User Medications ONLY: Only extract medications that the PATIENT explicitly states they are currently taking or have been prescribed. Do NOT extract medications that the AI Coach is merely suggesting, explaining, or educating the patient about.
-6. Preferences: ONLY extract preferences if the patient explicitly stated, updated, or removed a dietary or lifestyle preference in this conversation. If no preferences were discussed or changed, return an empty list: "preferences": [].
-7. """ + get_clinical_normalization_directive() + """
+4. ZERO UUID RULE: You MUST NOT invent, guess, or copy database UUIDs. Link actions to symptoms purely using human-readable semantic fields: "target_symptom_name" and "target_body_part".
+5. User Medications ONLY: Only extract medications that the PATIENT explicitly states they are currently taking or have been prescribed. Do NOT extract medications that the AI Coach is merely suggesting or explaining.
+6. Preferences: ONLY extract preferences if the patient explicitly stated, updated, or removed a dietary or lifestyle preference in this conversation.
+7. Tracking Progression & Attribution:
+   - If the patient reports an existing symptom is improving ("feeling better", "pain down"), output in "updated_symptoms" with "new_status": "Resolving" and "progression_note".
+   - If the patient says the symptom is completely gone, set "new_status": "Resolved".
+   - If the patient states that a specific remedy helped (e.g., "The warm compress worked wonders"), record it in "attributed_remedies" with "outcome": "positive".
+8. Standardized Anatomical Sites: Always map anatomical sites to one of:
+   [Head / Cranial, Eyes, Ears / Nose / Throat, Neck / Cervical, Shoulders, Upper Back / Thoracic, Lower Back / Lumbar, Chest, Abdomen, Pelvis / Groin, Hips, Knees, Ankles / Feet, Wrists / Hands, Full Body / Systemic].
+9. """ + get_clinical_normalization_directive() + """
 
 You will be given the CURRENT known preferences, active symptoms, active actions, and active medications, along with the RECENT chat log.
 You must return a JSON object exactly matching this format:
@@ -35,36 +43,67 @@ You must return a JSON object exactly matching this format:
     {"id": "uuid", "name": "Lisinopril", "dose": "20mg", "frequency": "Daily", "status": "Active"}
   ],
   "new_symptoms": [
-    {"name": "Lower back pain", "status": "Active", "severity": "Mild", "progression_note": "Triggered after gardening"}
+    {
+      "name": "Right Knee Stiffness",
+      "anatomical_site": "Knees",
+      "severity": "Moderate",
+      "status": "Active",
+      "progression_note": "Ache started after morning walk"
+    }
   ],
   "updated_symptoms": [
-    {"id": "uuid", "status": "Resolved", "severity": "Mild", "progression_note": "Pain is completely gone now"}
+    {
+      "target_symptom_name": "Lower Back Pain",
+      "target_body_part": "Lower Back / Lumbar",
+      "new_status": "Resolving",
+      "new_severity": "Mild",
+      "progression_note": "Pain decreased from 6/10 to 2/10 after rest"
+    }
   ],
   "new_actions": [
-    {"symptom_id": "uuid (optional, if linked to a symptom)", "description": "Ice the lower back", "status": "Suggested", "action_type": "symptom_relief", "cadence": "daily", "ui_action_type": "CHECKBOX_ONLY", "target_body_part": "Lower Back"}
+    {
+      "description": "Warm mustard oil compress for 15 mins",
+      "action_type": "symptom_relief",
+      "target_symptom_name": "Right Knee Stiffness",
+      "target_body_part": "Knees",
+      "cadence": "daily",
+      "ui_action_type": "START_TIMER",
+      "status": "Suggested"
+    }
   ],
   "updated_actions": [
     {"id": "uuid", "status": "Abandoned"}
+  ],
+  "attributed_remedies": [
+    {
+      "remedy_description": "Warm mustard oil compress",
+      "target_body_part": "Knees",
+      "outcome": "positive"
+    }
   ]
 }
 
-- For updated items, you MUST include the existing 'id'.
 - Action statuses can be: Suggested, Agreed, Completed, Abandoned, Paused.
-- Action types can be: symptom_relief, one_off (errand/milestone), habit (lifestyle routine), periodic (e.g. weekly check).
+- Action types can be: symptom_relief, one_off (errand/milestone), habit (lifestyle routine), periodic.
 - Cadence can be: daily, weekly_sunday, weekly_monday, etc., or once (for one-off errands).
-- ui_action_type can be: FOLLOW_EXERCISE (for stretching, mobility, guided routines), LOG_VITALS (for BP, blood sugar, weight checks), LOG_MEAL (for food photo/diet logging), COACH_CHAT (for checking in with Coach Zivaa), CHECKBOX_ONLY (for errands, hydration, general tasks).
-- target_body_part (optional, for exercise/symptom actions): Knees / Legs, Lower Back, Shoulders / Neck, Wrists / Hands, Ankles / Feet, Hip, Core, Full Body / Balance.
+- ui_action_type can be: FOLLOW_EXERCISE, LOG_VITALS, LOG_MEAL, COACH_CHAT, START_TIMER, CHECKBOX_ONLY.
 - Symptom statuses can be: Active, Resolving, Resolved, Chronic.
 - Symptom severities can be: Mild, Moderate, Severe.
 - Medication statuses can be: Active, Discontinued.
+- Remedy outcomes can be: positive, neutral, negative.
 
 DO NOT output markdown formatting like ```json.
 """
 
-async def extract_memory_from_chats(patient_id: str):
+async def extract_memory_from_chats(
+    patient_id: str,
+    session_id: Optional[str] = None,
+    message_ids: Optional[List[str]] = None
+):
     """
-    Reads recent unprocessed chat logs for the patient, extracts facts using Gemini, 
-    and updates the domain-driven care model tables with ePHI encryption.
+    Reads recent unprocessed chat logs for the patient (optionally filtered by session_id),
+    extracts facts using Gemini, and updates the domain-driven care model tables with ePHI encryption.
+    Flags chats as processed ONLY on successful completion.
     """
     try:
         # 1. Fetch Context & Decrypt for AI reasoning
@@ -104,15 +143,19 @@ async def extract_memory_from_chats(patient_id: str):
         print(f"Memory extract error fetching context data: {e}")
         return
 
-    # 2. Fetch recent unprocessed chat logs
+    # 2. Fetch recent unprocessed chat logs for this session
     try:
-        chat_res = supabase.table("coach_chat_logs") \
+        query = supabase.table("coach_chat_logs") \
             .select("id, role, message") \
             .eq("patient_id", patient_id) \
-            .eq("processed_by_memory", False) \
-            .order("created_at", desc=True) \
-            .limit(20) \
-            .execute()
+            .eq("processed_by_memory", False)
+            
+        if message_ids:
+            query = query.in_("id", message_ids)
+        elif session_id and session_id != "legacy_session":
+            query = query.filter("metadata->>session_id", "eq", session_id)
+            
+        chat_res = query.order("created_at", desc=True).limit(30).execute()
         
         if not chat_res.data:
             return
@@ -206,94 +249,15 @@ async def extract_memory_from_chats(patient_id: str):
                             "constraint_text": constraint_text
                         }).execute()
         
-        # Symptoms (Encrypted name)
-        for ns in parsed.get("new_symptoms", []):
-            name_raw = ns.get("name")
-            if not name_raw:
-                continue
-            symp_id = str(uuid.uuid4())
-            supabase.table("patient_symptoms").insert({
-                "id": symp_id,
-                "patient_id": patient_id,
-                "name": encrypt_text(name_raw),
-                "status": ns.get("status", "Active"),
-                "severity": ns.get("severity", "Mild")
-            }).execute()
-            if ns.get("progression_note"):
-                supabase.table("symptom_logs").insert({
-                    "symptom_id": symp_id,
-                    "patient_id": patient_id, 
-                    "severity": ns.get("severity", "Mild"),
-                    "status": ns.get("status", "Active"),
-                    "note": ns.get("progression_note")
-                }).execute()
-                
-        for us in parsed.get("updated_symptoms", []):
-            if not us.get("id"):
-                continue
-            payload = {}
-            if us.get("status"):
-                payload["status"] = us.get("status")
-            if us.get("severity"):
-                payload["severity"] = us.get("severity")
-            if us.get("name"):
-                payload["name"] = encrypt_text(us.get("name"))
-            if us.get("status") == "Resolved":
-                payload["resolved_at"] = datetime.now(timezone.utc).isoformat()
-            if payload:
-                supabase.table("patient_symptoms").update(payload).eq("id", us.get("id")).execute()
-            
-            if us.get("progression_note"):
-                supabase.table("symptom_logs").insert({
-                    "symptom_id": us.get("id"),
-                    "patient_id": patient_id, 
-                    "severity": us.get("severity", "Mild"),
-                    "status": us.get("status", "Active"),
-                    "note": us.get("progression_note")
-                }).execute()
-                
-        # Actions
-        for na in parsed.get("new_actions", []):
-            action_desc = na.get("description")
-            if not action_desc:
-                continue
-            act_type = na.get("action_type")
-            if not act_type:
-                act_type = "symptom_relief" if na.get("symptom_id") else "habit"
-            payload = {
-                "patient_id": patient_id,
-                "description": action_desc,
-                "status": na.get("status", "Suggested"),
-                "action_type": act_type,
-                "cadence": na.get("cadence", "daily" if act_type == "habit" else ("once" if act_type == "one_off" else "daily"))
-            }
-            if na.get("symptom_id"):
-                payload["symptom_id"] = na.get("symptom_id")
-            if na.get("target_body_part"):
-                payload["target_body_part"] = na.get("target_body_part")
-            
-            ui_action_type = na.get("ui_action_type")
-            if ui_action_type:
-                payload["action_metadata"] = {
-                    "ui_action_type": ui_action_type,
-                    "target_body_part": na.get("target_body_part")
-                }
-
-            try:
-                supabase.table("care_plan_actions").insert(payload).execute()
-            except Exception as insert_err:
-                # Graceful fallback if target_body_part/action_metadata columns are not yet present
-                payload.pop("target_body_part", None)
-                payload.pop("action_metadata", None)
-                try:
-                    supabase.table("care_plan_actions").insert(payload).execute()
-                except Exception:
-                    payload.pop("action_type", None)
-                    payload.pop("cadence", None)
-                    try:
-                        supabase.table("care_plan_actions").insert(payload).execute()
-                    except Exception as inner_err:
-                        print(f"Failed to insert care_plan_action: {inner_err}")
+        # Deterministic Symptom, Action, and Remedy Efficacy Resolution (Zero UUIDs)
+        try:
+            await resolve_symptom_and_actions(
+                patient_id=patient_id,
+                extraction_result=parsed,
+                patient_profile={"conditions": conditions}
+            )
+        except Exception as res_err:
+            print(f"Error in resolve_symptom_and_actions: {res_err}")
             
         for ua in parsed.get("updated_actions", []):
             if not ua.get("id"):
@@ -341,27 +305,29 @@ async def extract_memory_from_chats(patient_id: str):
         if has_new_meds:
             print(f"New medication found for {patient_id}. Medication interaction check can be evaluated.")
             
-        # Flag chats as processed
+        # Flag chats as processed ONLY after all extractions & updates succeed
         chat_ids = [c['id'] for c in chats]
         if chat_ids:
             supabase.table("coach_chat_logs").update({"processed_by_memory": True}).in_("id", chat_ids).execute()
-            print(f"Successfully flagged {len(chat_ids)} chats as processed for {patient_id}")
+            sess_info = f" in session {session_id}" if session_id else ""
+            print(f"Successfully flagged {len(chat_ids)} chats as processed for {patient_id}{sess_info}")
 
     except Exception as e:
         print(f"Failed to update patient memory in DB: {e}")
 
 async def process_inactive_chat_sessions():
     """
-    Finds patients who have unprocessed chat logs (processed_by_memory == False)
-    where the latest message was created > 5 minutes ago (patient is no longer typing).
-    Extracts clinical memory facts and flags the logs as processed.
+    Finds sessions that have unprocessed chat logs (processed_by_memory == False)
+    grouped by (patient_id, session_id), where the latest message in that session
+    was created > 5 minutes ago (patient is no longer typing in that session).
+    Extracts clinical memory facts session-by-session.
     """
     try:
         now = datetime.now(timezone.utc)
         
-        # 1. Fetch unprocessed chat messages
+        # 1. Fetch unprocessed chat messages with metadata to get session_id
         res = supabase.table("coach_chat_logs") \
-            .select("patient_id, created_at") \
+            .select("id, patient_id, created_at, metadata") \
             .eq("processed_by_memory", False) \
             .order("created_at", desc=False) \
             .execute()
@@ -369,21 +335,34 @@ async def process_inactive_chat_sessions():
         if not res.data:
             return
             
-        # 2. Group by patient_id and find the newest message timestamp
-        patient_latest_msg = {}
+        # 2. Group by (patient_id, session_id) and track the latest message timestamp and message ids
+        sessions: Dict[tuple, Dict[str, Any]] = {}
         for row in res.data:
             pid = row["patient_id"]
+            meta = row.get("metadata") or {}
+            sess_id = meta.get("session_id") or "legacy_session"
+            key = (pid, sess_id)
+            if key not in sessions:
+                sessions[key] = {
+                    "latest_at": None,
+                    "message_ids": []
+                }
             dt = datetime.fromisoformat(row["created_at"].replace("Z", "+00:00"))
-            if pid not in patient_latest_msg or dt > patient_latest_msg[pid]:
-                patient_latest_msg[pid] = dt
-                
-        # 3. Only process patients whose latest message is older than 5 minutes
-        five_mins_ago = now - timedelta(minutes=5)
-        ready_patients = [pid for pid, dt in patient_latest_msg.items() if dt <= five_mins_ago]
-        
-        for pid in ready_patients:
-            print(f"Triggering memory extraction for {pid} (inactive for >5 mins)")
-            await extract_memory_from_chats(pid)
+            if not sessions[key]["latest_at"] or dt > sessions[key]["latest_at"]:
+                sessions[key]["latest_at"] = dt
+            sessions[key]["message_ids"].append(row["id"])
             
+        # 3. Only process sessions whose latest message is older than 5 minutes
+        five_mins_ago = now - timedelta(minutes=5)
+        for (pid, sess_id), sinfo in sessions.items():
+            if sinfo["latest_at"] <= five_mins_ago:
+                sess_desc = sess_id if sess_id != "legacy_session" else "legacy"
+                print(f"Triggering memory extraction for patient {pid}, session {sess_desc} (inactive for >5 mins, {len(sinfo['message_ids'])} messages)")
+                await extract_memory_from_chats(
+                    patient_id=pid,
+                    session_id=sess_id if sess_id != "legacy_session" else None,
+                    message_ids=sinfo["message_ids"]
+                )
+                
     except Exception as e:
         print(f"Error in process_inactive_chat_sessions: {e}")

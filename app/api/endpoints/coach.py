@@ -105,10 +105,11 @@ Determine what the patient's latest message is introducing into the conversation
 2. **Category B: Acute Clinical Illness & Symptoms**
    - *Trigger:* The user reports an unexpected, acute illness or symptom unrelated to an ongoing habit (e.g., fever, sudden abdominal pain, urinary burning, headache, dizziness, nausea).
    - *Action:* 
-     1. Rule out red flags.
-     2. Present a reasoned **Differential Diagnosis** (2-3 potential explanations grounded in their context).
-     3. Apply Clinical OPQRST (see Step 3) by asking ONE targeted clarifying question to help narrow down the differential.
-     4. Suggest the appropriate Care Pathway (Self-Care, Primary Care Doctor, Urgent Care, or Emergency). Once a care pathway is determined, output `__META__{{"acuity": "Urgent"}}__META__` or `__META__{{"acuity": "Primary Care"}}__META__`.
+     1. Rule out red flags. (If the active symptom in context lists `[CRITICAL RED FLAGS TO ACTIVELY SCREEN]`, discreetly screen for them during your initial inquiry. If the patient confirms ANY listed red flag, immediately escalate to Category A Urgent Medical Evaluation with physician referral advice).
+     2. Warn against contraindicated habits. (If the active symptom lists `[CONTRAINDICATED / HARMFUL HABITS TO WARN AGAINST]`, proactively advise the senior against performing these specific actions or postures).
+     3. Present a reasoned **Differential Diagnosis** (2-3 potential explanations grounded in their context).
+     4. Apply Clinical OPQRST (see Step 3) by asking ONE targeted clarifying question to help narrow down the differential.
+     5. Suggest the appropriate Care Pathway (Self-Care, Primary Care Doctor, Urgent Care, or Emergency). Once a care pathway is determined, output `__META__{{"acuity": "Urgent"}}__META__` or `__META__{{"acuity": "Primary Care"}}__META__`.
 
 3. **Category C: Functional / Lifestyle Barriers (CRITICAL)**
    - *Trigger:* The user reports physical discomfort, joint stiffness, muscle fatigue, or digestive upset that arises *as a barrier while pursuing a lifestyle habit* (e.g., "My knees ache when I walk for 15 minutes", "I get heartburn after eating high-fiber foods", "I feel exhausted after 2,000 steps").
@@ -125,6 +126,14 @@ Determine what the patient's latest message is introducing into the conversation
 6. **Category F: Health Education & Lab Interpretation**
    - *Trigger:* The user asks "What does this mean?" or asks about a condition, medication, or lab biomarker.
    - *Action:* Explain using clear, simple analogies suited for seniors. Offer relevant differential context if lab values are out of range. Connect it directly back to their personal profile and active vitals.
+
+7. **Category G: Symptom Trajectory & Relief Report (Closed-Loop Resolution)**
+   - *Trigger:* The patient reports progress, relief, or resolution of a previously discussed symptom or remedy (e.g., "My knee feels much better today", "The warm compress really helped", "The headache is completely gone").
+   - *Action:*
+     1. Warmly celebrate their body's recovery and validate the relief achieved.
+     2. Positively reinforce the specific self-care remedy that helped them (e.g., "I'm so glad the warm compress gave your joint some ease, Shyam ji!").
+     3. Gently confirm if they feel back to their comfortable daily baseline or if any lingering stiffness remains.
+     4. Once confirmed resolved, invite them to resume their normal gentle daily routines.
 
 ---
 
@@ -219,7 +228,7 @@ async def query_gemini_chat(system_prompt: str, chat_history: List[dict], new_me
         "contents": contents,
         "generationConfig": {
             "temperature": 0.4,
-            "maxOutputTokens": 3000
+            "maxOutputTokens": 8192
         }
     }
     
@@ -508,11 +517,23 @@ async def build_coach_context_string(patient_id: str) -> str:
 
         # Add Symptoms
         if ctx.symptoms:
+            from app.services.clinical_taxonomy import get_canonical_symptom
             context_str += "- Active/Resolving Symptoms:\n"
             for sym in ctx.symptoms:
                 name = sym.get('name') or sym.get('symptom_name', 'Symptom')
                 severity = sym.get('severity', 'unknown')
-                context_str += f"  - {name} (Severity: {severity})\n"
+                site = sym.get('anatomical_site') or 'General'
+                c_key = sym.get('canonical_key')
+                
+                line = f"  - {name} (Site: {site}, Severity: {severity})"
+                if c_key:
+                    canonical = get_canonical_symptom(c_key)
+                    if canonical:
+                        if canonical.get("red_flags"):
+                            line += f"\n    [CRITICAL RED FLAGS TO ACTIVELY SCREEN: {'; '.join(canonical['red_flags'])}]"
+                        if canonical.get("contraindicated"):
+                            line += f"\n    [CONTRAINDICATED / HARMFUL HABITS TO WARN AGAINST: {', '.join(canonical['contraindicated'])}]"
+                context_str += line + "\n"
 
         # Add Actions
         if ctx.agreed_actions or ctx.suggested_actions:
@@ -759,7 +780,7 @@ async def chat_with_coach_stream(payload: ChatRequest):
             "contents": contents,
             "generationConfig": {
                 "temperature": 0.4,
-                "maxOutputTokens": 3000
+                "maxOutputTokens": 8192
             }
         }
         
@@ -812,6 +833,17 @@ async def chat_with_coach_stream(payload: ChatRequest):
             except Exception as e:
                 print(f"Stream error: {e}")
                 yield f"data: {json.dumps({'text': ' [Connection error]' })}\n\n"
+
+        # Flush any remaining buffer if meta tag was never encountered
+        if not meta_started and buffer:
+            if "__META__" in buffer:
+                idx = buffer.find("__META__")
+                to_yield = buffer[:idx]
+            else:
+                to_yield = buffer
+            if to_yield:
+                yield f"data: {json.dumps({'text': to_yield})}\n\n"
+            buffer = ""
         
         # Parse acuity for logging purposes, strip from full_reply, and yield to client
         import re

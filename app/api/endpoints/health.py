@@ -450,8 +450,10 @@ async def sync_complete(payload: SyncCompletePayload, background_tasks: Backgrou
 
 @router.post("/daily-plan/update-task")
 async def update_task_status(payload: UpdateTaskRequest):
-    """Updates the completed status of a specific task in the current daily plan."""
+    """Updates the completed status of a specific task in the current daily plan and syncs with care_plan_actions."""
     from app.services.insights.data_fetcher import supabase
+    from datetime import datetime, timezone
+    import uuid
     
     # Get the most recent plan for this patient
     res = supabase.table("daily_plans").select("id, schedule").eq("patient_id", payload.patient_id).order("created_at", desc=True).limit(1).execute()
@@ -469,13 +471,68 @@ async def update_task_status(payload: UpdateTaskRequest):
     if payload.task_index < 0 or payload.task_index >= len(schedule[period]):
         raise HTTPException(status_code=400, detail="Invalid task index.")
         
-    # Update the completed status
-    schedule[period][payload.task_index]["completed"] = payload.completed
+    # Update the completed status on the daily task
+    task_item = schedule[period][payload.task_index]
+    task_item["completed"] = payload.completed
+    task_item["status"] = "completed" if payload.completed else "pending"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if payload.completed:
+        task_item["completed_at"] = now_iso
+    else:
+        task_item.pop("completed_at", None)
     
     # Save back to database
     update_res = supabase.table("daily_plans").update({"schedule": schedule}).eq("id", plan["id"]).execute()
     
+    # ── TWO-WAY CLOSED LOOP SYNC TO care_plan_actions ──
+    care_act_id = task_item.get("care_plan_action_id") or task_item.get("anchor_id")
+    if care_act_id:
+        try:
+            uuid.UUID(str(care_act_id))
+            if payload.completed:
+                cur_act = supabase.table("care_plan_actions").select("completed_count").eq("id", str(care_act_id)).execute()
+                cur_count = (cur_act.data[0].get("completed_count") or 0) if cur_act.data else 0
+                supabase.table("care_plan_actions").update({
+                    "last_completed_at": now_iso,
+                    "completed_count": cur_count + 1
+                }).eq("id", str(care_act_id)).execute()
+        except Exception as act_err:
+            print(f"Notice: Could not sync completion to care_plan_actions: {act_err}")
+    
     return {"status": "success", "message": "Task status updated."}
+
+class TaskFeedbackRequest(BaseModel):
+    patient_id: str
+    task_id: Optional[str] = None
+    action_id: Optional[str] = None
+    task_title: Optional[str] = None
+    symptom_id: Optional[str] = None
+    period: Optional[str] = None
+    task_index: Optional[int] = None
+    feedback: str = "better"  # "better", "same", "worse", "skip"
+    notes: Optional[str] = None
+
+@router.post("/daily-plan/task/feedback")
+async def submit_task_feedback(payload: TaskFeedbackRequest):
+    """
+    Closed-loop micro-feedback endpoint.
+    Invoked when a senior completes a symptom-anchored relief task in the Daily Plan UI.
+    Records feedback into symptom_logs, learns remedy efficacy in symptom_intervention_efficacy,
+    and updates trajectory status.
+    """
+    from app.services.clinical_taxonomy import record_task_micro_feedback
+    res = await record_task_micro_feedback(
+        patient_id=payload.patient_id,
+        feedback=payload.feedback,
+        task_id=payload.task_id,
+        action_id=payload.action_id,
+        task_title=payload.task_title,
+        symptom_id=payload.symptom_id,
+        period=payload.period,
+        task_index=payload.task_index,
+        notes=payload.notes
+    )
+    return res
 
 class DismissActionPayload(BaseModel):
     patient_id: str
@@ -1116,10 +1173,12 @@ async def update_symptom(symptom_id: str, payload: UpdateSymptomPayload):
         supabase.table('patient_symptoms').update(update_data).eq('id', symptom_id).execute()
         
         # 2. Add entry to symptom_logs
+        from app.services.clinical_taxonomy import severity_to_score
         log_data = {
             'symptom_id': symptom_id,
             'patient_id': patient_id,
             'severity': severity,
+            'severity_score': severity_to_score(severity),
             'status': payload.status,
             'note': payload.progression_note or 'Status updated manually via UI'
         }
